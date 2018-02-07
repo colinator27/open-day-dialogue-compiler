@@ -197,7 +197,8 @@ namespace OpenDayDialogue
 
         public string GetFullSymbolName(string name)
         {
-            return GetCurrentNamespace() + "." + name;
+            string n = GetCurrentNamespace();
+            return n != "" ? (n + "." + name) : name;
         }
 
         public void GenerateCode(Block block)
