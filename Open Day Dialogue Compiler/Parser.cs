@@ -99,7 +99,7 @@ namespace OpenDayDialogue
                     args.Add(new Value(this, parser));
                 } else
                 {
-                    throw new ParserException(string.Format("Improper token for command argument around line {0}.", parser.tokenStream.Peek().line));
+                    throw new ParserException(string.Format("Improper token for command argument around line {0}.", parser.tokenStream.Peek().line + 1));
                 }
             }
         }
@@ -318,7 +318,7 @@ namespace OpenDayDialogue
                 choiceStatement = new SceneChoiceStatement(this, parser);
             } else
             {
-                throw new ParserException(string.Format("Unable to find any scene statement to parse! Around line {0}.", parser.tokenStream.Peek().line));
+                throw new ParserException(string.Format("Unable to find any scene statement to parse! Around line {0}.", parser.tokenStream.Peek().line + 1));
             }
         }
     }
@@ -511,12 +511,12 @@ namespace OpenDayDialogue
                             }
                         } catch (InvalidOperationException)
                         {
-                            throw new ParserException(string.Format("Detected unclosed parentheses in expression. Around line {0}.", next.line));
+                            throw new ParserException(string.Format("Detected unclosed parentheses in expression. Around line {0}.", next.line + 1));
                         }
                         if (operatorStack.Peek().type != Token.TokenType.OpenParen)
-                            throw new ParserException(string.Format("Unknown error parsing function around line {0}.", operatorStack.Peek().line));
+                            throw new ParserException(string.Format("Unknown error parsing function around line {0}.", operatorStack.Peek().line + 1));
                         if (parser.IsNextToken(Token.TokenType.CloseParen, Token.TokenType.Comma))
-                            throw new ParserException(string.Format("Expected expression around line {0}.", parser.tokenStream.Peek().line));
+                            throw new ParserException(string.Format("Expected expression around line {0}.", parser.tokenStream.Peek().line + 1));
                         functionStack.Peek().paramCount++;
                         break;
                     case Token.TokenType.OpenParen:
@@ -533,7 +533,7 @@ namespace OpenDayDialogue
                         }
                         catch (InvalidOperationException)
                         {
-                            throw new ParserException(string.Format("Detected unclosed parentheses in expression. Around line {0}.", next.line));
+                            throw new ParserException(string.Format("Detected unclosed parentheses in expression. Around line {0}.", next.line + 1));
                         }
 
                         if (operatorStack.Peek().type == Token.TokenType.Identifier)
@@ -578,7 +578,7 @@ namespace OpenDayDialogue
                 expressionRPN.Enqueue(operatorStack.Pop());
 
             if (expressionRPN.Count == 0)
-                throw new ParserException("Expected expression, but none found.");
+                throw new ParserException(string.Format("Expected expression, but none found. Around line {0}.", parser.tokenStream.Peek().line + 1));
 
             // Build the tree
             Token first = expressionRPN.Peek();
@@ -590,7 +590,7 @@ namespace OpenDayDialogue
                 {
                     Operator.OperatorInfo info = Operator.GetTokenOperator(next);
                     if (evaluationStack.Count < info.args)
-                        throw new ParserException(string.Format("Not enough arguments for operator \"{0}\" in expression around line {1}.", next.content, next.line));
+                        throw new ParserException(string.Format("Not enough arguments for operator \"{0}\" in expression around line {1}.", next.content, next.line + 1));
                     List<Expression> parameters = new List<Expression>();
                     for (int i = 0; i < info.args; i++)
                         parameters.Add(evaluationStack.Pop());
@@ -624,7 +624,7 @@ namespace OpenDayDialogue
             }
 
             if (evaluationStack.Count != 1)
-                throw new ParserException("Failed to reduce stack when parsing expression.");
+                throw new ParserException(string.Format("Failed to reduce stack when parsing expression. Around line {0}.", parser.tokenStream.Peek().line + 1));
 
             return evaluationStack.Pop();
         }
@@ -637,7 +637,7 @@ namespace OpenDayDialogue
             }
             if (t1.type != Token.TokenType.BinaryOperator && t1.type != Token.TokenType.CompareOperator && t1.type != Token.TokenType.UnaryMinus && t1.type != Token.TokenType.UnaryInvert)
             {
-                throw new ParserException("Invalid operator in expression.");
+                throw new ParserException(string.Format("Invalid operator in expression. Around line {0}.", t1.line + 1));
             }
             Token t2 = operatorStack.Peek();
 
@@ -711,7 +711,7 @@ namespace OpenDayDialogue
                 case "^^":
                     return new OperatorInfo(Associativity.Left, 2, 2);
                 default:
-                    throw new ParserException("Invalid operator detected.");
+                    throw new ParserException(string.Format("Invalid operator detected. Around line {0}.", t.line + 1));
             }
         }
 
@@ -778,7 +778,7 @@ namespace OpenDayDialogue
                     valueVariable = t.content;
                     break;
                 default:
-                    throw new ParserException(string.Format("Invalid Value token type around line {0}.", t.line));
+                    throw new ParserException(string.Format("Invalid Value token type around line {0}.", t.line + 1));
             }
         }
 

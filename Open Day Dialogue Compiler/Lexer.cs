@@ -476,6 +476,9 @@ namespace OpenDayDialogue
                                         content = noPrefix
                                     });
                                 }
+                            } else
+                            {
+                                throw new LexerException(string.Format("Failed to find proper token at line {0}.", line + 1));
                             }
                         }
                     }
@@ -513,7 +516,7 @@ namespace OpenDayDialogue
         {
         }
 
-        public LexerException(string message) : base("Lexer error: " + message)
+        public LexerException(string message) : base(message)
         {
         }
 
