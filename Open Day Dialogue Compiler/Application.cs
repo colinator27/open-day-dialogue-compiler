@@ -88,7 +88,12 @@ namespace OpenDayDialogue
                 return;
             }
 
-            Console.WriteLine("Completed! Instructions:\n{0}", c.GetInstructionsString());
+            Console.WriteLine("Completed!");
+            Console.WriteLine("\n\nStatistics:\n\nInstruction count: {0}\nUnique command count: {1}" +
+                              "\nDefinition count: {2}\nScene count: {3}\nUnique string count: {4}" +
+                              "\nUnique value count: {5}", 
+                c.program.instructions.Count, c.program.commandTable.Count, c.program.definitions.Count,
+                c.program.scenes.Count, c.program.stringEntries.Count, c.program.values.Count);
             Console.ReadKey();
         }
     }

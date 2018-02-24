@@ -64,7 +64,7 @@ namespace OpenDayDialogue
 
         public static bool CanParse(Parser parser)
         {
-            return parser.IsNextToken(Token.TokenType.String);
+            return parser.IsNextToken(Token.TokenType.String) && !parser.AreNextTokens(Token.TokenType.String, Token.TokenType.Colon);
         }
 
         public SceneText(Node parent, Parser parser) : base(parent, parser)
@@ -209,39 +209,71 @@ namespace OpenDayDialogue
 
         public static bool CanParse(Parser parser)
         {
-            return parser.IsNextToken(Token.TokenType.Keyword) && parser.IsNextToken("choice");
+            return (parser.IsNextToken(Token.TokenType.Keyword) && parser.IsNextToken("choice"))
+                || parser.AreNextTokens(Token.TokenType.String, Token.TokenType.Colon);
         }
 
         public SceneChoiceStatement(Node parent, Parser parser) : base(parent, parser)
         {
-            parser.EnsureToken(Token.TokenType.Keyword, "choice");
-            parser.EnsureToken(Token.TokenType.Colon);
-
-            choices = new List<Choice>();
-            parser.EnsureToken(Token.TokenType.Indent);
-            while (parser.tokenStream.Count > 0 && !parser.IsNextToken(Token.TokenType.Dedent))
+            if (parser.IsNextToken(Token.TokenType.Keyword))
             {
-                Choice choice = new Choice()
-                {
-                    choiceText = parser.EnsureToken(Token.TokenType.String).content,
-                    statements = new List<SceneStatement>()
-                };
+                // Regular choice statement
+                parser.EnsureToken(Token.TokenType.Keyword, "choice");
                 parser.EnsureToken(Token.TokenType.Colon);
-                if (parser.IsNextToken(Token.TokenType.Keyword) && parser.IsNextToken("if"))
-                {
-                    parser.EnsureToken(Token.TokenType.Keyword, "if");
-                    choice.condition = Expression.Parse(this, parser);
-                }
+
+                choices = new List<Choice>();
                 parser.EnsureToken(Token.TokenType.Indent);
                 while (parser.tokenStream.Count > 0 && !parser.IsNextToken(Token.TokenType.Dedent))
                 {
-                    choice.statements.Add(new SceneStatement(this, parser));
+                    Choice choice = new Choice()
+                    {
+                        choiceText = parser.EnsureToken(Token.TokenType.String).content,
+                        statements = new List<SceneStatement>()
+                    };
+                    parser.EnsureToken(Token.TokenType.Colon);
+                    if (parser.IsNextToken(Token.TokenType.Keyword) && parser.IsNextToken("if"))
+                    {
+                        parser.EnsureToken(Token.TokenType.Keyword, "if");
+                        choice.condition = Expression.Parse(this, parser);
+                    }
+                    parser.EnsureToken(Token.TokenType.Indent);
+                    while (parser.tokenStream.Count > 0 && !parser.IsNextToken(Token.TokenType.Dedent))
+                    {
+                        choice.statements.Add(new SceneStatement(this, parser));
+                    }
+                    parser.EnsureToken(Token.TokenType.Dedent);
+
+                    choices.Add(choice);
                 }
                 parser.EnsureToken(Token.TokenType.Dedent);
+            } else
+            {
+                // Modified choice statement (no keyword and indent, etc.)
+                choices = new List<Choice>();
 
-                choices.Add(choice);
+                while (parser.tokenStream.Count > 0 && parser.AreNextTokens(Token.TokenType.String, Token.TokenType.Colon))
+                {
+                    Choice choice = new Choice()
+                    {
+                        choiceText = parser.EnsureToken(Token.TokenType.String).content,
+                        statements = new List<SceneStatement>()
+                    };
+                    parser.EnsureToken(Token.TokenType.Colon);
+                    if (parser.IsNextToken(Token.TokenType.Keyword) && parser.IsNextToken("if"))
+                    {
+                        parser.EnsureToken(Token.TokenType.Keyword, "if");
+                        choice.condition = Expression.Parse(this, parser);
+                    }
+                    parser.EnsureToken(Token.TokenType.Indent);
+                    while (parser.tokenStream.Count > 0 && !parser.IsNextToken(Token.TokenType.Dedent))
+                    {
+                        choice.statements.Add(new SceneStatement(this, parser));
+                    }
+                    parser.EnsureToken(Token.TokenType.Dedent);
+
+                    choices.Add(choice);
+                }
             }
-            parser.EnsureToken(Token.TokenType.Dedent);
         }
     }
 
@@ -842,6 +874,109 @@ namespace OpenDayDialogue
                     return null;
             }
         }
+
+        public Value ConvertTo(Value.Type type)
+        {
+            if (this.type == type)
+                return this;
+
+            switch (this.type)
+            {
+                case Type.Double:
+                    switch (type)
+                    {
+                        case Type.Int32:
+                            return new Value(this.parent, null)
+                            {
+                                type = type,
+                                valueInt32 = (int)(this.valueDouble)
+                            };
+                        case Type.String:
+                            return new Value(this.parent, null)
+                            {
+                                type = type,
+                                valueString = this.valueDouble.ToString()
+                            };
+                    }
+                    break;
+                case Type.Int32:
+                    switch (type)
+                    {
+                        case Type.Double:
+                            return new Value(this.parent, null)
+                            {
+                                type = type,
+                                valueDouble = (double)(this.valueInt32)
+                            };
+                        case Type.String:
+                            return new Value(this.parent, null)
+                            {
+                                type = type,
+                                valueString = this.valueInt32.ToString()
+                            };
+                    }
+                    break;
+                case Type.String:
+                    switch (type)
+                    {
+                        case Type.Double:
+                            return new Value(this.parent, null)
+                            {
+                                type = type,
+                                valueDouble = double.Parse(this.valueString)
+                            };
+                        case Type.Int32:
+                            return new Value(this.parent, null)
+                            {
+                                type = type,
+                                valueInt32 = int.Parse(this.valueString)
+                            };
+                        case Type.Boolean:
+                            return new Value(this.parent, null)
+                            {
+                                type = type,
+                                valueBoolean = (this.valueString != "")
+                            };
+                    }
+                    break;
+                case Type.Boolean:
+                    switch (type)
+                    {
+                        case Type.Double:
+                            return new Value(this.parent, null)
+                            {
+                                type = type,
+                                valueDouble = (valueBoolean ? 1d : 0d)
+                            };
+                        case Type.Int32:
+                            return new Value(this.parent, null)
+                            {
+                                type = type,
+                                valueInt32 = (valueBoolean ? 1 : 0)
+                            };
+                        case Type.String:
+                            return new Value(this.parent, null)
+                            {
+                                type = type,
+                                valueString = (valueBoolean ? "true" : "false")
+                            };
+                    }
+                    break;
+                case Type.Undefined:
+                    switch (type)
+                    {
+                        case Type.String:
+                            return new Value(this.parent, null)
+                            {
+                                type = type,
+                                valueString = "undefined"
+                            };
+                    }
+                    break;
+            }
+
+            throw new ParserException(string.Format("Cannot convert type {0} to {1}.", this.type, type));
+        }
     }
 
     class Parser
@@ -927,6 +1062,19 @@ namespace OpenDayDialogue
             if (tokenStream.Count == 0)
                 return false;
             return types.Contains(tokenStream.Peek().type);
+        }
+
+        public bool AreNextTokens(Token.TokenType t1, Token.TokenType t2)
+        {
+            if (t1 != Token.TokenType.EndOfLine && t2 != Token.TokenType.EndOfLine)
+            {
+                // If not searching for end of lines, remove them before we run into problems
+                if (tokenStream.Peek().type == Token.TokenType.EndOfLine)
+                    tokenStream.Dequeue();
+            }
+            if (tokenStream.Count < 2)
+                return false;
+            return t1 == tokenStream.Peek().type && t2 == tokenStream.Skip(1).First().type;
         }
 
         public bool IsNextTokenDontRemoveEOL(params Token.TokenType[] types)

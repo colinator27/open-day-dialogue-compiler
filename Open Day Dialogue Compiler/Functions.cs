@@ -51,5 +51,10 @@ namespace OpenDayDialogue
                 Initialize();
             return functions[name];
         }
+
+        public static bool IsBuiltin(string name)
+        {
+            return functions.ContainsKey(name);
+        }
     }
 }
