@@ -134,10 +134,15 @@ namespace OpenDayDialogue
         }
     }
 
-    struct Clause
+    class Clause : Node
     {
         public Expression expression;
         public List<SceneStatement> statements;
+
+        public Clause(Node parent) : base(parent, null)
+        {
+
+        }
     }
 
     class SceneIfStatement : Node
@@ -153,10 +158,8 @@ namespace OpenDayDialogue
         public SceneIfStatement(Node parent, Parser parser) : base(parent, parser)
         {
             parser.EnsureToken(Token.TokenType.Keyword, "if");
-            mainClause = new Clause()
-            {
-                expression = Expression.Parse(this, parser)
-            };
+            mainClause = new Clause(this);
+            mainClause.expression = Expression.Parse(mainClause, parser);
             parser.EnsureToken(Token.TokenType.Colon);
 
             parser.EnsureToken(Token.TokenType.Indent);
@@ -174,10 +177,8 @@ namespace OpenDayDialogue
                 if (parser.IsNextToken(Token.TokenType.Keyword) && parser.IsNextToken("if"))
                 {
                     parser.EnsureToken(Token.TokenType.Keyword, "if");
-                    Clause next = new Clause()
-                    {
-                        expression = Expression.Parse(this, parser)
-                    };
+                    Clause next = new Clause(this);
+                    next.expression = Expression.Parse(next, parser);
                     parser.EnsureToken(Token.TokenType.Colon);
                     parser.EnsureToken(Token.TokenType.Indent);
                     next.statements = new List<SceneStatement>();
@@ -191,7 +192,7 @@ namespace OpenDayDialogue
                 {
                     // Final else clause, read it and break out of loop
                     parser.EnsureToken(Token.TokenType.Colon);
-                    Clause final = new Clause();
+                    Clause final = new Clause(this);
                     parser.EnsureToken(Token.TokenType.Indent);
                     final.statements = new List<SceneStatement>();
                     while (parser.tokenStream.Count > 0 && !parser.IsNextToken(Token.TokenType.Dedent))
@@ -306,6 +307,35 @@ namespace OpenDayDialogue
         }
     }
 
+    class SceneSpecialCommand : Node
+    {
+        public string commandName;
+        public string operand;
+
+        public static bool CanParse(Parser parser)
+        {
+            return parser.IsNextToken(Token.TokenType.CompareOperator);
+        }
+
+        public SceneSpecialCommand(Node parent, Parser parser) : base(parent, parser)
+        {
+            string op = parser.EnsureToken(Token.TokenType.CompareOperator).content;
+            if (parser.IsNextToken(Token.TokenType.Identifier))
+                operand = parser.EnsureToken(Token.TokenType.Identifier).content;
+            switch (op)
+            {
+                case ">":
+                    commandName = "goto";
+                    break;
+                case "<":
+                    commandName = "exit";
+                    break;
+                default:
+                    throw new ParserException(string.Format("Unsupported special command for operator \"{0}\". At line {1}.", op, parser.tokenStream.Peek().line + 1));
+            }
+        }
+    }
+
     class SceneStatement : Node
     {
         public enum Type
@@ -340,10 +370,24 @@ namespace OpenDayDialogue
                 type = Type.SpecialName;
                 SceneSpecialName sn = new SceneSpecialName(this, parser);
                 text = new SceneText(this, parser, sn.dialogue);
-                command = new SceneCommand(this, parser, new List<Value>() {
+                command = new SceneCommand(this, parser, new List<Value>()
+                {
                     new Value(this, parser, "char"),
                     new Value(this, parser, sn.charName)
                 });
+            } else if (SceneSpecialCommand.CanParse(parser))
+            {
+                type = Type.Command;
+                SceneSpecialCommand sc = new SceneSpecialCommand(this, parser);
+
+                List<Value> values = new List<Value>()
+                {
+                    new Value(this, parser, sc.commandName)
+                };
+                if (sc.operand != null)
+                    values.Add(new Value(this, parser, sc.operand));
+
+                command = new SceneCommand(this, parser, values);
             } else if (SceneCommand.CanParse(parser))
             {
                 type = Type.Command;
@@ -431,23 +475,7 @@ namespace OpenDayDialogue
             statements = new List<SceneStatement>();
             while (parser.tokenStream.Count > 0 && !parser.IsNextToken(Token.TokenType.Dedent))
             {
-                SceneStatement s = new SceneStatement(this, parser);
-                if (s.type != SceneStatement.Type.SpecialName)
-                {
-                    statements.Add(s);
-                } else
-                {
-                    s.command.parent = this;
-                    statements.Add(new SceneStatement(this, parser, SceneStatement.Type.Command)
-                    {
-                        command = s.command
-                    });
-                    s.text.parent = this;
-                    statements.Add(new SceneStatement(this, parser, SceneStatement.Type.Text)
-                    {
-                        text = s.text
-                    });
-                }
+                statements.Add(new SceneStatement(this, parser));
             }
             parser.EnsureToken(Token.TokenType.Dedent);
         }
@@ -517,6 +545,11 @@ namespace OpenDayDialogue
         public Expression(Node parent, FunctionCall func, Parser parser) : base(parent, parser)
         {
             this.func = func;
+        }
+
+        public Expression(Node parent) : base(parent, null)
+        {
+            
         }
 
         public static Expression Parse(Node parent, Parser parser)
@@ -596,6 +629,8 @@ namespace OpenDayDialogue
                             throw new ParserException(string.Format("Detected unclosed parentheses in expression. Around line {0}.", next.line + 1));
                         }
 
+                        if (operatorStack.Count < 1)
+                            throw new ParserException(string.Format("Error parsing expression. Around line {0}.", next.line + 1));
                         if (operatorStack.Peek().type == Token.TokenType.Identifier)
                         {
                             if (last.type != Token.TokenType.OpenParen)
@@ -910,6 +945,12 @@ namespace OpenDayDialogue
         {
             type = Type.RawIdentifier;
             valueRawIdentifier = rawIdentifier;
+        }
+
+        public Value(Node parent, Parser parser, int int32) : base(parent, parser)
+        {
+            type = Type.Int32;
+            valueInt32 = int32;
         }
 
         public override string ToString()

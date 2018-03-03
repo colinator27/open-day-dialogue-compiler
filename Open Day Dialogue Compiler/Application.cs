@@ -73,6 +73,10 @@ namespace OpenDayDialogue
                 }
             }
 
+            // Make it harder for people to snoop conversations
+            Console.WriteLine("Shuffling strings...");
+            c.program.ShuffleStrings();
+
             Console.WriteLine("Writing binary...");
             try
             {

@@ -60,6 +60,13 @@ namespace OpenDayDialogue
             commandTable.Add(id, c);
             return id;
         }
+
+        public void ShuffleStrings()
+        {
+            Random r = new Random();
+            stringEntries = stringEntries.OrderBy(x => r.Next())
+               .ToDictionary(item => item.Key, item => item.Value);
+        }
     }
 
     class CommandCall
@@ -374,6 +381,16 @@ namespace OpenDayDialogue
 
                     // Write the label that signals the end of the choices                   
                     Emit(Instruction.Opcode.Label, endChoiceLabel);
+                    break;
+                case SceneStatement.Type.SpecialName:
+                    GenerateCode(new SceneStatement(null, null, SceneStatement.Type.Command)
+                    {
+                        command = statement.command
+                    });
+                    GenerateCode(new SceneStatement(null, null, SceneStatement.Type.Text)
+                    {
+                        text = statement.text
+                    });
                     break;
             }
         }
