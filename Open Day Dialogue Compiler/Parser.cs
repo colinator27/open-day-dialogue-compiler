@@ -66,6 +66,11 @@ namespace OpenDayDialogue
         {
             return parser.IsNextToken(Token.TokenType.String) && !parser.AreNextTokens(Token.TokenType.String, Token.TokenType.Colon);
         }
+        
+        public SceneText(Node parent, Parser parser, string content) : base(parent, parser)
+        {
+            text = content;
+        }
 
         public SceneText(Node parent, Parser parser) : base(parent, parser)
         {
@@ -81,6 +86,11 @@ namespace OpenDayDialogue
         public static bool CanParse(Parser parser)
         {
             return parser.IsNextToken(Token.TokenType.Identifier);
+        }
+
+        public SceneCommand(Node parent, Parser parser, List<Value> args) : base(parent, parser)
+        {
+            this.args = args;
         }
 
         public SceneCommand(Node parent, Parser parser) : base(parent, parser)
@@ -277,6 +287,25 @@ namespace OpenDayDialogue
         }
     }
 
+    class SceneSpecialName : Node
+    {
+        public string charName;
+        public string dialogue;
+
+        public static bool CanParse(Parser parser)
+        {
+            return parser.AreNextTokens(Token.TokenType.Identifier, Token.TokenType.Colon, Token.TokenType.String);
+        }
+
+        public SceneSpecialName(Node parent, Parser parser) : base(parent, parser)
+        {
+            charName = parser.EnsureToken(Token.TokenType.Identifier).content;
+            parser.EnsureToken(Token.TokenType.Colon);
+            dialogue = parser.EnsureToken(Token.TokenType.String).content;
+            parser.EnsureToken(Token.TokenType.EndOfLine);
+        }
+    }
+
     class SceneStatement : Node
     {
         public enum Type
@@ -285,7 +314,8 @@ namespace OpenDayDialogue
             Command,
             VariableAssign,
             IfStatement,
-            ChoiceStatement
+            ChoiceStatement,
+            SpecialName
         }
         public Type type;
         public SceneText text;
@@ -294,12 +324,26 @@ namespace OpenDayDialogue
         public SceneIfStatement ifStatement;
         public SceneChoiceStatement choiceStatement;
 
+        public SceneStatement(Node parent, Parser parser, Type type) : base(parent, parser)
+        {
+            this.type = type;
+        }
+
         public SceneStatement(Node parent, Parser parser) : base(parent, parser)
         {
             if (SceneText.CanParse(parser))
             {
                 type = Type.Text;
                 text = new SceneText(this, parser);
+            } else if (SceneSpecialName.CanParse(parser))
+            {
+                type = Type.SpecialName;
+                SceneSpecialName sn = new SceneSpecialName(this, parser);
+                text = new SceneText(this, parser, sn.dialogue);
+                command = new SceneCommand(this, parser, new List<Value>() {
+                    new Value(this, parser, "char"),
+                    new Value(this, parser, sn.charName)
+                });
             } else if (SceneCommand.CanParse(parser))
             {
                 type = Type.Command;
@@ -387,7 +431,23 @@ namespace OpenDayDialogue
             statements = new List<SceneStatement>();
             while (parser.tokenStream.Count > 0 && !parser.IsNextToken(Token.TokenType.Dedent))
             {
-                statements.Add(new SceneStatement(this, parser));
+                SceneStatement s = new SceneStatement(this, parser);
+                if (s.type != SceneStatement.Type.SpecialName)
+                {
+                    statements.Add(s);
+                } else
+                {
+                    s.command.parent = this;
+                    statements.Add(new SceneStatement(this, parser, SceneStatement.Type.Command)
+                    {
+                        command = s.command
+                    });
+                    s.text.parent = this;
+                    statements.Add(new SceneStatement(this, parser, SceneStatement.Type.Text)
+                    {
+                        text = s.text
+                    });
+                }
             }
             parser.EnsureToken(Token.TokenType.Dedent);
         }
@@ -1064,17 +1124,36 @@ namespace OpenDayDialogue
             return types.Contains(tokenStream.Peek().type);
         }
 
-        public bool AreNextTokens(Token.TokenType t1, Token.TokenType t2)
+        public bool AreNextTokens(params Token.TokenType[] tokens)
         {
-            if (t1 != Token.TokenType.EndOfLine && t2 != Token.TokenType.EndOfLine)
+            if (tokens.Length >= 1 && tokens[0] != Token.TokenType.EndOfLine)
             {
                 // If not searching for end of lines, remove them before we run into problems
                 if (tokenStream.Peek().type == Token.TokenType.EndOfLine)
                     tokenStream.Dequeue();
             }
-            if (tokenStream.Count < 2)
+            if (tokenStream.Count < tokens.Length)
                 return false;
-            return t1 == tokenStream.Peek().type && t2 == tokenStream.Skip(1).First().type;
+            for (int i = 0; i < tokens.Length; i++)
+            {
+                if (tokenStream.Skip(i).First().type != tokens[i])
+                    return false;
+            }
+            return true;
+        }
+
+        public bool IsTokenAfterNext(Token.TokenType t)
+        {
+
+            if (t != Token.TokenType.EndOfLine)
+            {
+                // If not searching for end of lines, remove them before we run into problems
+                if (tokenStream.Peek().type == Token.TokenType.EndOfLine)
+                    tokenStream.Dequeue();
+            }
+            if (tokenStream.Count < 1)
+                return false;
+            return t == tokenStream.Skip(1).First().type;
         }
 
         public bool IsNextTokenDontRemoveEOL(params Token.TokenType[] types)
