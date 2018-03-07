@@ -44,10 +44,23 @@ namespace OpenDayDialogue
                 v.stringID = RegisterString(v.valueRawIdentifier);
             }
             else if (v.type == Value.Type.String)
-            {            
-                if (Application.generateTranslations && !Application.excludeValues)
+            {
+                if (!Application.excludeValues)
                 {
-                    Application.translations[Application.currentFile].Item2["s:" + c.GetCurrentNamespace()].Add(v.valueString);
+                    if (Application.generateTranslations)
+                    {
+                        Application.genTranslations[Application.currentFile].Item2["s:" + c.GetCurrentNamespace()].Add(v.valueString);
+                    }
+                    else if (Application.applyTranslations)
+                    {
+                        if (Application.queuedTranslations[Application.currentFile].Item2.ContainsKey("s:" + c.GetCurrentNamespace()))
+                        {
+                            Queue<string> q = Application.queuedTranslations[Application.currentFile].Item2["s:" + c.GetCurrentNamespace()];
+                            if (q.Count == 0)
+                                throw new Exception("Translation file string count does not match with the actual code!");
+                            v.valueString = q.Dequeue();
+                        }
+                    }
                 }
                 v.stringID = RegisterString(v.valueString);
             }
@@ -238,15 +251,40 @@ namespace OpenDayDialogue
                     currentNamespace.Push(s.definitionGroup.groupName);
                     if (Application.generateTranslations)
                     {
-                        Application.translations[Application.currentFile].Item2["d:" + GetCurrentNamespace()] = new List<string>();
+                        Application.genTranslations[Application.currentFile].Item2["d:" + GetCurrentNamespace()] = new List<string>();
                     }
                     foreach (TextDefinition def in s.definitionGroup.definitions)
                     {
                         uint keyID = program.RegisterString(GetFullSymbolName(def.key));
                         if (program.definitions.ContainsKey(keyID))
                             throw new Exception(string.Format("Found duplicate definitions for {0}", GetFullSymbolName(def.key)));
+                        if (Application.generateTranslations)
+                        {
+                            Application.genTranslations[Application.currentFile].Item2["d:" + GetCurrentNamespace()].Add(def.value); 
+                        } else if (Application.applyTranslations)
+                        {
+                            if (Application.queuedTranslations[Application.currentFile].Item2.ContainsKey("d:" + GetCurrentNamespace()))
+                            {
+                                Queue<string> q = Application.queuedTranslations[Application.currentFile].Item2["d:" + GetCurrentNamespace()];
+                                if (q.Count == 0)
+                                    throw new Exception(string.Format("Translation file string count does not match with the actual code!\nItem identifier: {0}",
+                                                                      "d:" + GetCurrentNamespace()));
+                                def.value = q.Dequeue();
+                            }
+                        }
                         uint valueID = program.RegisterString(def.value);
                         program.definitions[keyID] = valueID;
+                    }
+                    if (Application.applyTranslations)
+                    {
+                        if (Application.queuedTranslations[Application.currentFile].Item2.ContainsKey("d:" + GetCurrentNamespace()))
+                        {
+                            if (Application.queuedTranslations[Application.currentFile].Item2["d:" + GetCurrentNamespace()].Count != 0)
+                            {
+                                throw new Exception(string.Format("Translation file string count does not match with the actual code!\nItem identifier: {0}",
+                                                                  "d:" + GetCurrentNamespace()));
+                            }
+                        }
                     }
                     currentNamespace.Pop();
                     break;
@@ -259,9 +297,20 @@ namespace OpenDayDialogue
                     currentNamespace.Push(s.scene.name);
                     if (Application.generateTranslations)
                     {
-                        Application.translations[Application.currentFile].Item2["s:" + GetCurrentNamespace()] = new List<string>();
+                        Application.genTranslations[Application.currentFile].Item2["s:" + GetCurrentNamespace()] = new List<string>();
                     }
                     GenerateCode(s.scene);
+                    if (Application.applyTranslations)
+                    {
+                        if (Application.queuedTranslations[Application.currentFile].Item2.ContainsKey("s:" + GetCurrentNamespace()))
+                        {
+                            if (Application.queuedTranslations[Application.currentFile].Item2["s:" + GetCurrentNamespace()].Count != 0)
+                            {
+                                throw new Exception(string.Format("Translation file string count does not match with the actual code!\nItem identifier: {0}",
+                                                                  "s:" + GetCurrentNamespace()));
+                            }
+                        }
+                    }
                     currentNamespace.Pop();
                     break;
             }
@@ -269,12 +318,12 @@ namespace OpenDayDialogue
 
         public void GenerateCode(Scene scene)
         {
-            if (program.scenes.ContainsKey(program.RegisterString(GetFullSymbolName(scene.name))))
+            if (program.scenes.ContainsKey(program.RegisterString(GetCurrentNamespace())))
                 throw new Exception("Only one definition of a scene is permitted.");
 
             // Add the label
             uint labelID = program.GetNextLabel();
-            program.scenes[program.RegisterString(GetFullSymbolName(scene.name))] = labelID;
+            program.scenes[program.RegisterString(GetCurrentNamespace())] = labelID;
             Emit(Instruction.Opcode.Label, labelID);
 
             // Iterate through the statements!
@@ -294,7 +343,17 @@ namespace OpenDayDialogue
                 case SceneStatement.Type.Text:
                     if (Application.generateTranslations)
                     {
-                        Application.translations[Application.currentFile].Item2["s:" + GetCurrentNamespace()].Add(statement.text.text); 
+                        Application.genTranslations[Application.currentFile].Item2["s:" + GetCurrentNamespace()].Add(statement.text.text); 
+                    } else if (Application.applyTranslations)
+                    {
+                        if (Application.queuedTranslations[Application.currentFile].Item2.ContainsKey("s:" + GetCurrentNamespace()))
+                        {
+                            Queue<string> q = Application.queuedTranslations[Application.currentFile].Item2["s:" + GetCurrentNamespace()];
+                            if (q.Count == 0)
+                                throw new Exception(string.Format("Translation file string count does not match with the actual code!\nItem identifier: {0}",
+                                                                  "s:" + GetCurrentNamespace()));
+                            statement.text.text = q.Dequeue();
+                        }
                     }
                     Emit(Instruction.Opcode.TextRun, program.RegisterString(statement.text.text));
                     break;
@@ -385,14 +444,34 @@ namespace OpenDayDialogue
                             GenerateCode(c.condition);
                             if (Application.generateTranslations)
                             {
-                                Application.translations[Application.currentFile].Item2["s:" + GetCurrentNamespace()].Add(c.choiceText);
+                                Application.genTranslations[Application.currentFile].Item2["s:" + GetCurrentNamespace()].Add(c.choiceText);
+                            } else if (Application.applyTranslations)
+                            {
+                                if (Application.queuedTranslations[Application.currentFile].Item2.ContainsKey("s:" + GetCurrentNamespace()))
+                                {
+                                    Queue<string> q = Application.queuedTranslations[Application.currentFile].Item2["s:" + GetCurrentNamespace()];
+                                    if (q.Count == 0)
+                                        throw new Exception(string.Format("Translation file string count does not match with the actual code!\nItem identifier: {0}",
+                                                                  "s:" + GetCurrentNamespace()));
+                                    c.choiceText = q.Dequeue();
+                                }
                             }
                             Emit(Instruction.Opcode.ChoiceTrue, program.RegisterString(c.choiceText), choices[i].Value);
                         } else
                         {
                             if (Application.generateTranslations)
                             {
-                                Application.translations[Application.currentFile].Item2["s:" + GetCurrentNamespace()].Add(c.choiceText);
+                                Application.genTranslations[Application.currentFile].Item2["s:" + GetCurrentNamespace()].Add(c.choiceText);
+                            } else if (Application.applyTranslations)
+                            {
+                                if (Application.queuedTranslations[Application.currentFile].Item2.ContainsKey("s:" + GetCurrentNamespace()))
+                                {
+                                    Queue<string> q = Application.queuedTranslations[Application.currentFile].Item2["s:" + GetCurrentNamespace()];
+                                    if (q.Count == 0)
+                                        throw new Exception(string.Format("Translation file string count does not match with the actual code!\nItem identifier: {0}",
+                                                                  "s:" + GetCurrentNamespace()));
+                                    c.choiceText = q.Dequeue();
+                                }
                             }
                             Emit(Instruction.Opcode.Choice, program.RegisterString(c.choiceText), choices[i].Value);
                         }

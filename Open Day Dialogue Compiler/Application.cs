@@ -17,7 +17,10 @@ namespace OpenDayDialogue
         public static string currentFile = "";
         public static bool generateTranslations = false;
         public static bool excludeValues = false;
-        public static Dictionary<string/*filename*/, Tuple<string/*file hash*/, Dictionary<string/*symbol name*/, List<string>/*strings*/>>> translations;
+        public static bool applyTranslations = false;
+        public static bool translationIgnoreHash = false;
+        public static Dictionary<string/*filename*/, Tuple<string/*file hash*/, Dictionary<string/*symbol name*/, List<string>/*strings*/>>> genTranslations;
+        public static Dictionary<string/*filename*/, Tuple<string/*file hash*/, Dictionary<string/*symbol name*/, Queue<string>/*strings*/>>> queuedTranslations;
 
         protected static void Main(string[] args)
         {
@@ -27,15 +30,19 @@ namespace OpenDayDialogue
 
             OptionSet options = new OptionSet
             {
-                { "s|source=", "The input source {file} name/path. Used in conjunction with export.", s => sourceFileName = s },
-                { "e|export=", "The export binary {file} name/path.", e => exportFileName = e },
-                { "t", "Generate translation files as compiling happens.", g => generateTranslations = (g != null) },
-                { "c", "Exclude values/commands when generating translations (has no effect when applying the translation files).", _c => excludeValues = (_c != null) },            
+                { "s|source=", "The input source {file} name/path.", x => sourceFileName = x },
+                { "e|export=", "The export binary {file} name/path. Used in conjunction with '--source' option.", x => exportFileName = x },
+                { "make-translations", "Generate translation files as compiling happens. Outputs to the same directory as source files, with extension '.opdat'.", x => generateTranslations = (x != null) },
+                { "exclude-values", "Exclude values/commands when generating translations (has no effect when applying the translation files).", x => excludeValues = (x != null) },
+                { "apply-translations", "Will apply translation files if they are found with the source code files. They must be the source file's name followed by '.opdat'.", x => applyTranslations = (x != null) },
+                { "ignore-hash", "When applying translation files, ignore the original file hash. Warning: This can be risky.", x => translationIgnoreHash = (x != null) },
                 { "h|help", "Show help menu.", h => showHelp = (h != null) }
             };
 
             if (showHelp)
             {
+                Console.WriteLine("Usage: {0} <options>", AppDomain.CurrentDomain.FriendlyName);
+                Console.WriteLine("Options:");
                 options.WriteOptionDescriptions(Console.Out);
                 return;
             }
@@ -63,7 +70,11 @@ namespace OpenDayDialogue
 
             if (generateTranslations)
             {
-                translations = new Dictionary<string, Tuple<string, Dictionary<string, List<string>>>>();
+                genTranslations = new Dictionary<string, Tuple<string, Dictionary<string, List<string>>>>();
+            }
+            if (applyTranslations)
+            {
+                queuedTranslations = new Dictionary<string, Tuple<string, Dictionary<string, Queue<string>>>>();
             }
 
             files.Enqueue(sourceFileName);
@@ -95,7 +106,32 @@ namespace OpenDayDialogue
                     // Create translation data structure for the file
                     Console.WriteLine("Calculating SHA256 of text and creating translation structures...");
                     hash = BitConverter.ToString(SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(text))).Replace("-", "").ToLower();
-                    translations.Add(filename, new Tuple<string, Dictionary<string, List<string>>>(hash, new Dictionary<string, List<string>>()));
+                    genTranslations.Add(filename, new Tuple<string, Dictionary<string, List<string>>>(hash, new Dictionary<string, List<string>>()));
+                }
+                if (applyTranslations)
+                {
+                    // Load translation data for the file
+                    if (File.Exists(filename + ".opdat"))
+                    {
+                        Console.WriteLine("Calculating SHA256 of text and loading data from translation file...");
+                        hash = BitConverter.ToString(SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(text))).Replace("-", "").ToLower();
+                        string[] lines;
+                        try
+                        {
+                            lines = File.ReadAllLines(filename + ".opdat");
+                        } catch (Exception e)
+                        {
+                            Console.WriteLine("Failed to open translation file \"{0}\".\nMessage: {1}", filename + ".opdat", e.Message);
+                            return;
+                        }
+                        var t = TranslationManager.GetTranslationFromFileLines(hash, filename, lines);
+                        if (t.Item1 == "" || t.Item2 == null)
+                            return;
+                        queuedTranslations.Add(filename, t);
+                    } else
+                    {
+                        Console.WriteLine("Found no translation file at {0}", filename + ".opdat");
+                    }
                 }
 
                 // Create a token stream from input file
@@ -105,7 +141,7 @@ namespace OpenDayDialogue
                 {
                     tokens = Lexer.LexString(text);
                 }
-                catch (LexerException e)
+                catch (Exception e)
                 {
                     Console.WriteLine(e.Message);
                     return;
@@ -118,7 +154,7 @@ namespace OpenDayDialogue
                 {
                     p = new Parser(tokens);
                 }
-                catch (ParserException e)
+                catch (Exception e)
                 {
                     Console.WriteLine(e.Message);
                     return;
@@ -165,48 +201,11 @@ namespace OpenDayDialogue
 
             if (generateTranslations)
             {
-                foreach (var pair in translations)
+                foreach (var pair in genTranslations)
                 {
                     Console.WriteLine("Writing translation file at {0}", pair.Key + ".opdat");
 
-                    string text = "";
-
-                    // Header
-                    text += "~" + pair.Value.Item1 + "\n";
-                    text += "!" + (excludeValues ? "E" : "e") + "\n\n";
-
-                    // Each item
-                    foreach (var pair2 in pair.Value.Item2)
-                    {
-                        text += "=" + pair2.Key + "\n";
-                        foreach (string s in pair2.Value)
-                        {
-                            text += "\"";
-                            foreach (char ch in s)
-                            {
-                                switch (ch)
-                                {
-                                    case '\n':
-                                        text += "\\n";
-                                        break;
-                                    case '\r':
-                                        text += "\\r";
-                                        break;
-                                    case '\t':
-                                        text += "\\t";
-                                        break;
-                                    case '"':
-                                        text += "\\\"";
-                                        break;
-                                    default:
-                                        text += ch;
-                                        break;
-                                }
-                            }
-                            text += "\"\n";
-                        }
-                        text += "\n";
-                    }
+                    string text = TranslationManager.GetTranslationText(pair);
 
                     // Write to file
                     try
