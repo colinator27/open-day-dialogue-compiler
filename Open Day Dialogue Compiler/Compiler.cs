@@ -36,25 +36,25 @@ namespace OpenDayDialogue
         }
 
         private uint valueCounter = 0;
-		public uint RegisterValue(Value v, Compiler c)
-		{
-			uint id = valueCounter++;
-			if (v.type == Value.Type.RawIdentifier)
-			{
-				v.stringID = RegisterString(v.valueRawIdentifier);
-			}
-			else if (v.type == Value.Type.String)
-			{            
-				if (Application.generateTranslations && !Application.excludeValues)
+        public uint RegisterValue(Value v, Compiler c)
+        {
+            uint id = valueCounter++;
+            if (v.type == Value.Type.RawIdentifier)
+            {
+                v.stringID = RegisterString(v.valueRawIdentifier);
+            }
+            else if (v.type == Value.Type.String)
+            {            
+                if (Application.generateTranslations && !Application.excludeValues)
                 {
-					Application.translations[Application.currentFile].Item2["s:" + c.GetCurrentNamespace()].Add(v.valueString);
+                    Application.translations[Application.currentFile].Item2["s:" + c.GetCurrentNamespace()].Add(v.valueString);
                 }
-				v.stringID = RegisterString(v.valueString);
-			}
-			else if (v.type == Value.Type.Variable)
-			{
-				v.stringID = RegisterString(v.valueVariable);
-			}
+                v.stringID = RegisterString(v.valueString);
+            }
+            else if (v.type == Value.Type.Variable)
+            {
+                v.stringID = RegisterString(v.valueVariable);
+            }
             if (values.ContainsValue(v))
                 return values.FirstOrDefault(x => x.Value.Equals(v)).Key;
             values.Add(id, v);
@@ -235,7 +235,7 @@ namespace OpenDayDialogue
                     GenerateCode(s.block);
                     break;
                 case Statement.Type.DefinitionGroup:
-					currentNamespace.Push(s.definitionGroup.groupName);
+                    currentNamespace.Push(s.definitionGroup.groupName);
                     if (Application.generateTranslations)
                     {
                         Application.translations[Application.currentFile].Item2["d:" + GetCurrentNamespace()] = new List<string>();
@@ -256,13 +256,13 @@ namespace OpenDayDialogue
                     currentNamespace.Pop();
                     break;
                 case Statement.Type.Scene:
-					currentNamespace.Push(s.scene.name);
-					if (Application.generateTranslations)
-					{
-						Application.translations[Application.currentFile].Item2["s:" + GetCurrentNamespace()] = new List<string>();
-					}
+                    currentNamespace.Push(s.scene.name);
+                    if (Application.generateTranslations)
+                    {
+                        Application.translations[Application.currentFile].Item2["s:" + GetCurrentNamespace()] = new List<string>();
+                    }
                     GenerateCode(s.scene);
-					currentNamespace.Pop();
+                    currentNamespace.Pop();
                     break;
             }
         }
@@ -292,10 +292,10 @@ namespace OpenDayDialogue
             switch (statement.type)
             {
                 case SceneStatement.Type.Text:
-					if (Application.generateTranslations)
-					{
-						Application.translations[Application.currentFile].Item2["s:" + GetCurrentNamespace()].Add(statement.text.text); 
-					}
+                    if (Application.generateTranslations)
+                    {
+                        Application.translations[Application.currentFile].Item2["s:" + GetCurrentNamespace()].Add(statement.text.text); 
+                    }
                     Emit(Instruction.Opcode.TextRun, program.RegisterString(statement.text.text));
                     break;
                 case SceneStatement.Type.Command:
@@ -383,13 +383,13 @@ namespace OpenDayDialogue
                         if (c.condition != null)
                         {
                             GenerateCode(c.condition);
-							if (Application.generateTranslations)
+                            if (Application.generateTranslations)
                             {
-								Application.translations[Application.currentFile].Item2["s:" + GetCurrentNamespace()].Add(c.choiceText);
+                                Application.translations[Application.currentFile].Item2["s:" + GetCurrentNamespace()].Add(c.choiceText);
                             }
                             Emit(Instruction.Opcode.ChoiceTrue, program.RegisterString(c.choiceText), choices[i].Value);
                         } else
-						{
+                        {
                             if (Application.generateTranslations)
                             {
                                 Application.translations[Application.currentFile].Item2["s:" + GetCurrentNamespace()].Add(c.choiceText);
