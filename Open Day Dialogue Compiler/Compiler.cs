@@ -36,15 +36,25 @@ namespace OpenDayDialogue
         }
 
         private uint valueCounter = 0;
-        public uint RegisterValue(Value v)
-        {
-            uint id = valueCounter++;
-            if (v.type == Value.Type.RawIdentifier)
-                v.stringID = RegisterString(v.valueRawIdentifier);
-            else if (v.type == Value.Type.String)
-                v.stringID = RegisterString(v.valueString);
-            else if (v.type == Value.Type.Variable)
-                v.stringID = RegisterString(v.valueVariable);
+		public uint RegisterValue(Value v, Compiler c)
+		{
+			uint id = valueCounter++;
+			if (v.type == Value.Type.RawIdentifier)
+			{
+				v.stringID = RegisterString(v.valueRawIdentifier);
+			}
+			else if (v.type == Value.Type.String)
+			{            
+				if (Application.generateTranslations && !Application.excludeValues)
+                {
+					Application.translations[Application.currentFile].Item2["s:" + c.GetCurrentNamespace()].Add(v.valueString);
+                }
+				v.stringID = RegisterString(v.valueString);
+			}
+			else if (v.type == Value.Type.Variable)
+			{
+				v.stringID = RegisterString(v.valueVariable);
+			}
             if (values.ContainsValue(v))
                 return values.FirstOrDefault(x => x.Value.Equals(v)).Key;
             values.Add(id, v);
@@ -225,7 +235,11 @@ namespace OpenDayDialogue
                     GenerateCode(s.block);
                     break;
                 case Statement.Type.DefinitionGroup:
-                    currentNamespace.Push(s.definitionGroup.groupName);
+					currentNamespace.Push(s.definitionGroup.groupName);
+                    if (Application.generateTranslations)
+                    {
+                        Application.translations[Application.currentFile].Item2["d:" + GetCurrentNamespace()] = new List<string>();
+                    }
                     foreach (TextDefinition def in s.definitionGroup.definitions)
                     {
                         uint keyID = program.RegisterString(GetFullSymbolName(def.key));
@@ -242,7 +256,13 @@ namespace OpenDayDialogue
                     currentNamespace.Pop();
                     break;
                 case Statement.Type.Scene:
+					currentNamespace.Push(s.scene.name);
+					if (Application.generateTranslations)
+					{
+						Application.translations[Application.currentFile].Item2["s:" + GetCurrentNamespace()] = new List<string>();
+					}
                     GenerateCode(s.scene);
+					currentNamespace.Pop();
                     break;
             }
         }
@@ -272,13 +292,17 @@ namespace OpenDayDialogue
             switch (statement.type)
             {
                 case SceneStatement.Type.Text:
+					if (Application.generateTranslations)
+					{
+						Application.translations[Application.currentFile].Item2["s:" + GetCurrentNamespace()].Add(statement.text.text); 
+					}
                     Emit(Instruction.Opcode.TextRun, program.RegisterString(statement.text.text));
                     break;
                 case SceneStatement.Type.Command:
                     // Register values
                     List<uint> valueIDs = new List<uint>();
                     foreach (Value v in statement.command.args.Skip(1))
-                        valueIDs.Add(program.RegisterValue(v));
+                        valueIDs.Add(program.RegisterValue(v, this));
 
                     // Register the command call
                     uint commandID = program.RegisterCommand(new CommandCall()
@@ -359,9 +383,17 @@ namespace OpenDayDialogue
                         if (c.condition != null)
                         {
                             GenerateCode(c.condition);
+							if (Application.generateTranslations)
+                            {
+								Application.translations[Application.currentFile].Item2["s:" + GetCurrentNamespace()].Add(c.choiceText);
+                            }
                             Emit(Instruction.Opcode.ChoiceTrue, program.RegisterString(c.choiceText), choices[i].Value);
                         } else
-                        {
+						{
+                            if (Application.generateTranslations)
+                            {
+                                Application.translations[Application.currentFile].Item2["s:" + GetCurrentNamespace()].Add(c.choiceText);
+                            }
                             Emit(Instruction.Opcode.Choice, program.RegisterString(c.choiceText), choices[i].Value);
                         }
                     }
@@ -400,7 +432,7 @@ namespace OpenDayDialogue
             if (e.value != null)
             {
                 // Standard value
-                Emit(Instruction.Opcode.Push, program.RegisterValue(e.value));
+                Emit(Instruction.Opcode.Push, program.RegisterValue(e.value, this));
             } else
             {
                 if (e.func.parameters.Count == 1 && e.func.function.name == "-")
@@ -425,7 +457,7 @@ namespace OpenDayDialogue
                         // If the type is valid, emit it here
                         if (ok)
                         {
-                            Emit(Instruction.Opcode.Push, program.RegisterValue(v));
+                            Emit(Instruction.Opcode.Push, program.RegisterValue(v, this));
                             return;
                         }
                     }
@@ -545,7 +577,7 @@ namespace OpenDayDialogue
                             }
                             if (ok)
                             {
-                                Emit(Instruction.Opcode.Push, program.RegisterValue(v));
+                                Emit(Instruction.Opcode.Push, program.RegisterValue(v, this));
                                 return;
                             }
                         }
@@ -567,7 +599,7 @@ namespace OpenDayDialogue
                             content = e.func.parameters.Count.ToString(),
                             type = Token.TokenType.Number
                         })
-                    ));
+                    , this));
                     Emit(Instruction.Opcode.CallFunction, program.RegisterString(e.func.function.name));
                 } else
                 {
