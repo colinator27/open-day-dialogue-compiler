@@ -16,7 +16,7 @@ namespace OpenDayDialogue
 
         public void Write(Stream s)
         {
-            using (BinaryWriter bw = new BinaryWriter(s, Encoding.UTF8))
+            using (LEBinaryWriter bw = new LEBinaryWriter(s, Encoding.UTF8))
             {
                 bw.Write(new char[] { 'O', 'P', 'D', 'A' });
 
@@ -74,14 +74,14 @@ namespace OpenDayDialogue
             }
         }
 
-        void WriteString(BinaryWriter bw, string str)
+        void WriteString(LEBinaryWriter bw, string str)
         {
             foreach (char c in str)
                 bw.Write(c);
             bw.Write((char)0x00);
         }
 
-        void WriteValue(BinaryWriter bw, Value v)
+        void WriteValue(LEBinaryWriter bw, Value v)
         {
             bw.Write((ushort)v.type);
             switch (v.type)
@@ -104,13 +104,68 @@ namespace OpenDayDialogue
             }
         }
 
-        void WriteInstruction(BinaryWriter bw, Instruction inst)
+        void WriteInstruction(LEBinaryWriter bw, Instruction inst)
         {
             bw.Write((byte)inst.opcode);
             if (inst.operand1 != null)
                 bw.Write((uint)inst.operand1);
             if (inst.operand2 != null)
                 bw.Write((uint)inst.operand2);
+        }
+    }
+
+    class LEBinaryWriter : BinaryWriter
+    {
+        public LEBinaryWriter(Stream input, Encoding encoding) : base(input, encoding)
+        {
+        }
+
+        public override void Write(uint value)
+        {
+            List<byte> data = new List<byte>(BitConverter.GetBytes(value));
+            if (!BitConverter.IsLittleEndian)
+                data.Reverse();
+            base.Write(data.ToArray());
+        }
+
+        public override void Write(int value)
+        {
+            List<byte> data = new List<byte>(BitConverter.GetBytes(value));
+            if (!BitConverter.IsLittleEndian)
+                data.Reverse();
+            base.Write(data.ToArray());
+        }
+
+        public override void Write(ushort value)
+        {
+            List<byte> data = new List<byte>(BitConverter.GetBytes(value));
+            if (!BitConverter.IsLittleEndian)
+                data.Reverse();
+            base.Write(data.ToArray());
+        }
+
+        public override void Write(short value)
+        {
+            List<byte> data = new List<byte>(BitConverter.GetBytes(value));
+            if (!BitConverter.IsLittleEndian)
+                data.Reverse();
+            base.Write(data.ToArray());
+        }
+
+        public override void Write(ulong value)
+        {
+            List<byte> data = new List<byte>(BitConverter.GetBytes(value));
+            if (!BitConverter.IsLittleEndian)
+                data.Reverse();
+            base.Write(data.ToArray());
+        }
+        
+        public override void Write(long value)
+        {
+            List<byte> data = new List<byte>(BitConverter.GetBytes(value));
+            if (!BitConverter.IsLittleEndian)
+                data.Reverse();
+            base.Write(data.ToArray());
         }
     }
 }
