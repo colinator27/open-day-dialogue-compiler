@@ -6,6 +6,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using Mono.Options;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace OpenDayDialogue
 {
@@ -27,6 +29,7 @@ namespace OpenDayDialogue
             string sourceFileName = "", exportFileName = "";
             bool showHelp = false;
             bool invalidParameters = false;
+            bool showInstructions = false;
 
             OptionSet options = new OptionSet
             {
@@ -36,7 +39,8 @@ namespace OpenDayDialogue
                 { "exclude-values", "Exclude values/commands when generating translations (has no effect when applying the translation files).", x => excludeValues = (x != null) },
                 { "apply-translations", "Will apply translation files if they are found with the source code files. They must be the source file's name followed by '.opdat'.", x => applyTranslations = (x != null) },
                 { "ignore-hash", "When applying translation files, ignore the original file hash. Warning: This can be risky.", x => translationIgnoreHash = (x != null) },
-                { "h|help", "Show help menu.", h => showHelp = (h != null) }
+                { "show-instructions", "Show the final list of instructions when the program finishes compiling.", x => showInstructions = (x != null) },
+                { "h|help", "Show this help menu.", h => showHelp = (h != null) }
             };
 
             if (showHelp)
@@ -67,6 +71,19 @@ namespace OpenDayDialogue
                 options.WriteOptionDescriptions(Console.Out);
                 return;
             }
+
+            Console.WriteLine("Preparing methods...");
+            foreach (var type in Assembly.GetExecutingAssembly().GetTypes())
+            {
+                foreach (var method in type.GetMethods(BindingFlags.DeclaredOnly | BindingFlags.NonPublic |
+                                                       BindingFlags.Public | BindingFlags.Instance |
+                                                       BindingFlags.Static))
+                {
+                    RuntimeHelpers.PrepareMethod(method.MethodHandle);
+                }
+            }
+
+            var watch = System.Diagnostics.Stopwatch.StartNew();
 
             if (generateTranslations)
             {
@@ -220,12 +237,19 @@ namespace OpenDayDialogue
                 }
             }
 
-            Console.WriteLine("Completed!");
+            watch.Stop();
+
+            Console.WriteLine("Completed in {0} ms.", watch.ElapsedMilliseconds);
             Console.WriteLine("\n\nStatistics:\n\nInstruction count: {0}\nUnique command count: {1}" +
                               "\nDefinition count: {2}\nScene count: {3}\nUnique string count: {4}" +
                               "\nUnique value count: {5}", 
                 c.program.instructions.Count, c.program.commandTable.Count, c.program.definitions.Count,
                 c.program.scenes.Count, c.program.stringEntries.Count, c.program.values.Count);
+
+            if (showInstructions)
+            {
+                Console.WriteLine(string.Format("\n\nInstructions:\n\n{0}", c.GetInstructionsString()));
+            }
         }
     }
 }

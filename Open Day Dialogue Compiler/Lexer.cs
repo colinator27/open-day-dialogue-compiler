@@ -27,7 +27,8 @@ namespace OpenDayDialogue
             Undefined,
             Comma,
             UnaryMinus,
-            UnaryInvert
+            UnaryInvert,
+            SpecialAssignmentOperator
         }
 
         public TokenType type;
@@ -92,7 +93,7 @@ namespace OpenDayDialogue
 
         private static bool IsDelimeter(char c)
         {
-            return c == ' ' || c == ':' || c == '=' || c == '+' || c == '-' || c == '*' || c == '/' || c == '%' || c == '^' || c == '>' || c == '<' || c == '(' || c == ')' || c == '!';
+            return c == ' ' || c == ':' || c == '=' || c == '+' || c == '-' || c == '*' || c == '/' || c == '%' || c == '^' || c == '>' || c == '<' || c == '(' || c == ')' || c == '!' || c == '"';
         }
 
         private static string ReadSingleWord(this string s, ref int pos)
@@ -310,6 +311,25 @@ namespace OpenDayDialogue
                         });
                     }
 
+                    // Special assignment operator
+                    string saop = "";
+                    if (txt.CheckChars2ReturnVal(ref pos, '+', '=', ref saop)
+                     || txt.CheckChars2ReturnVal(ref pos, '-', '=', ref saop)
+                     || txt.CheckChars2ReturnVal(ref pos, '*', '=', ref saop)
+                     || txt.CheckChars2ReturnVal(ref pos, '/', '=', ref saop)
+                     || txt.CheckChars2ReturnVal(ref pos, '%', '=', ref saop)
+                     || txt.CheckChars2ReturnVal(ref pos, '+', '+', ref saop)
+                     || txt.CheckChars2ReturnVal(ref pos, '-', '-', ref saop))
+                    {
+                        pos += saop.Length;
+                        tokens.Add(new Token()
+                        {
+                            type = Token.TokenType.SpecialAssignmentOperator,
+                            line = line,
+                            content = saop
+                        });
+                    }
+
                     // Binary operator
                     string bop = "";
                     if (txt.CheckChars1ReturnVal(ref pos, '+', ref bop)
@@ -425,6 +445,9 @@ namespace OpenDayDialogue
                                 case "if":
                                 case "choice":
                                 case "else":
+                                case "while":
+                                case "continue":
+                                case "break":
                                     tokens.Add(new Token()
                                     {
                                         type = Token.TokenType.Keyword,

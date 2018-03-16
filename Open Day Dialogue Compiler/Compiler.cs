@@ -14,6 +14,7 @@ namespace OpenDayDialogue
         public Dictionary<uint/* scene name id */, uint/* label id */> scenes = new Dictionary<uint, uint>();
         public Dictionary<uint/* key string id */, uint/* value string id */> definitions = new Dictionary<uint, uint>();
         public Dictionary<uint/* value id */, Value> values = new Dictionary<uint, Value>();
+        public Dictionary<string/* custom label name */, uint/* label id */> customLabels = new Dictionary<string, uint>();
         public List<Instruction> instructions = new List<Instruction>();
 
         private uint labelCounter = 0;
@@ -213,11 +214,13 @@ namespace OpenDayDialogue
     {
         public Program program;
         private Stack<string> currentNamespace;
+        private Stack<Tuple<SceneWhileLoop, uint/*begin label*/, uint/*end label*/>> whileLoops;
 
         public Compiler()
         {
             program = new Program();
             currentNamespace = new Stack<string>();
+            whileLoops = new Stack<Tuple<SceneWhileLoop, uint, uint>>();
         }
 
         public string GetCurrentNamespace()
@@ -233,6 +236,7 @@ namespace OpenDayDialogue
 
         public void GenerateCode(Block block)
         {
+
             // Generate code for each statement
             foreach (Statement s in block.statements)
             {
@@ -326,7 +330,16 @@ namespace OpenDayDialogue
             program.scenes[program.RegisterString(GetCurrentNamespace())] = labelID;
             Emit(Instruction.Opcode.Label, labelID);
 
-            // Iterate through the statements!
+            // Generate custom labels
+            foreach (SceneStatement s in scene.statements)
+            {
+                if (s.type == SceneStatement.Type.Label)
+                {
+                    program.customLabels[s.label.name] = program.GetNextLabel();
+                }
+            }
+
+            // Generate code for the scene statements
             foreach (SceneStatement s in scene.statements)
             {
                 GenerateCode(s);
@@ -441,7 +454,11 @@ namespace OpenDayDialogue
                         Choice c = choices[i].Key;
                         if (c.condition != null)
                         {
+                            // Generate expression bytecode for whether or not choice is available
+
                             GenerateCode(c.condition);
+
+                            // Translations
                             if (Application.generateTranslations)
                             {
                                 Application.genTranslations[Application.currentFile].Item2["s:" + GetCurrentNamespace()].Add(c.choiceText);
@@ -456,9 +473,12 @@ namespace OpenDayDialogue
                                     c.choiceText = q.Dequeue();
                                 }
                             }
+
+                            // Write the choice instruction
                             Emit(Instruction.Opcode.ChoiceTrue, program.RegisterString(c.choiceText), choices[i].Value);
                         } else
                         {
+                            // Translations
                             if (Application.generateTranslations)
                             {
                                 Application.genTranslations[Application.currentFile].Item2["s:" + GetCurrentNamespace()].Add(c.choiceText);
@@ -473,6 +493,8 @@ namespace OpenDayDialogue
                                     c.choiceText = q.Dequeue();
                                 }
                             }
+
+                            // Write the choice instruction
                             Emit(Instruction.Opcode.Choice, program.RegisterString(c.choiceText), choices[i].Value);
                         }
                     }
@@ -502,6 +524,57 @@ namespace OpenDayDialogue
                     {
                         text = statement.text
                     });
+                    break;
+                case SceneStatement.Type.Label:
+                    if (!program.customLabels.ContainsKey(statement.label.name))
+                        throw new Exception(string.Format("Somehow, the compiler failed to register a label ID for label \"{0}\". This shouldn't happen.", statement.label.name));
+                    Emit(Instruction.Opcode.Label, program.customLabels[statement.label.name]);
+                    break;
+                case SceneStatement.Type.Jump:
+                    if (!program.customLabels.ContainsKey(statement.jump.labelName))
+                        throw new Exception(string.Format("Failed to find label with name \"{0}\". Invalid jump statement.", statement.jump.labelName));
+                    Emit(Instruction.Opcode.Jump, program.customLabels[statement.jump.labelName]);
+                    break;
+                case SceneStatement.Type.WhileLoop:
+                    // Get labels pre-generated
+                    uint beginConditionLabel = program.GetNextLabel();
+                    uint endLoopLabel = program.GetNextLabel();
+
+                    // Enter this loop's context
+                    whileLoops.Push(new Tuple<SceneWhileLoop, uint, uint>(statement.whileLoop, beginConditionLabel, endLoopLabel));
+
+                    // Condition to test for each iteration
+                    Emit(Instruction.Opcode.Label, beginConditionLabel);
+                    GenerateCode(statement.whileLoop.condition);
+
+                    // If the condition is false, jump to the end
+                    Emit(Instruction.Opcode.JumpFalse, endLoopLabel);
+
+                    // Write the statements to run each iteration
+                    statement.whileLoop.statements.ForEach(s => GenerateCode(s));
+
+                    // After each iteration, jump to the condition check for the next iteration
+                    Emit(Instruction.Opcode.Jump, beginConditionLabel);
+
+                    // The end of the loop
+                    Emit(Instruction.Opcode.Label, endLoopLabel);
+
+                    // Exit this loop's context
+                    whileLoops.Pop();
+
+                    break;
+                case SceneStatement.Type.ControlFlow:
+                    switch (statement.controlFlow.content)
+                    {
+                        case "continue":
+                            Emit(Instruction.Opcode.Jump, whileLoops.Peek().Item2);
+                            break;
+                        case "break":
+                            Emit(Instruction.Opcode.Jump, whileLoops.Peek().Item3);
+                            break;
+                        default:
+                            throw new Exception("Invalid control flow keyword. Honestly, this should never happen.");
+                    }
                     break;
             }
         }
