@@ -3,7 +3,7 @@ Compiler for the Open Day Dialogue programming language.
 
 To use, simply build the project as an executable, and run it from command line. You should be prompted with the usage.
 
-As of writing this, the usage is as follows:
+As of writing/updating this, the usage is as follows:
 ```
 OpenDayDialogue <options>
 Options:
@@ -21,7 +21,9 @@ Options:
                                source file's name followed by '.opdat'.
       --ignore-hash          When applying translation files, ignore the
                                original file hash. Warning: This can be risky.
-  -h, --help                 Show help menu.
+      --show-instructions    Show the final list of instructions when the
+                               program finishes compiling.
+  -h, --help                 Show this help menu.
 ```
 
 Note:
