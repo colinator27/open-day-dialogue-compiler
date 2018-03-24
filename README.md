@@ -23,6 +23,8 @@ Options:
                                original file hash. Warning: This can be risky.
       --show-instructions    Show the final list of instructions when the
                                program finishes compiling.
+      --err-log-items        When an error gets logged, it will include the
+                               item's name if possible.
   -h, --help                 Show this help menu.
 ```
 
