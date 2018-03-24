@@ -40,6 +40,10 @@ namespace OpenDayDialogue
 
     static class Lexer
     {
+        /// <summary>
+        /// Checks if a string contains a character at a position.
+        /// </summary>
+        /// <returns>True or false.</returns>
         private static bool CheckChars1(this string s, ref int pos, char c1)
         {
             if (pos >= s.Length)
@@ -47,6 +51,10 @@ namespace OpenDayDialogue
             return s[pos] == c1;
         }
 
+        /// <summary>
+        /// Checks if a string contains a character at a position, and if it is, set "o" to the character.
+        /// </summary>
+        /// <returns>True or false.</returns>
         private static bool CheckChars1ReturnVal(this string s, ref int pos, char c1, ref string o)
         {
             if (pos >= s.Length)
@@ -57,6 +65,10 @@ namespace OpenDayDialogue
             return success;
         }
 
+        /// <summary>
+        /// Checks if a string contains two characters in succession at a position, and if it is, set "o" to the characters.
+        /// </summary>
+        /// <returns>True or false.</returns>
         private static bool CheckChars2ReturnVal(this string s, ref int pos, char c1, char c2, ref string o)
         {
             if (pos + 1 >= s.Length)
@@ -70,6 +82,10 @@ namespace OpenDayDialogue
             return success;
         }
 
+        /// <summary>
+        /// Checks if a string contains two characters in succession at a position.
+        /// </summary>
+        /// <returns>True or false.</returns>
         private static bool CheckChars2(this string s, ref int pos, char c1, char c2)
         {
             if (pos + 1 >= s.Length)
@@ -77,6 +93,10 @@ namespace OpenDayDialogue
             return s[pos] == c1 && s[pos + 1] == c2;
         }
 
+        /// <summary>
+        /// Checks if a string contains three characters in succession at a position.
+        /// </summary>
+        /// <returns>True or false.</returns>
         private static bool CheckChars3(this string s, ref int pos, char c1, char c2, char c3)
         {
             if (pos + 2 >= s.Length)
@@ -84,6 +104,10 @@ namespace OpenDayDialogue
             return s[pos] == c1 && s[pos + 1] == c2 && s[pos + 2] == c3;
         }
 
+        /// <summary>
+        /// Checks if a string contains four characters in succession at a position.
+        /// </summary>
+        /// <returns>True or false.</returns>
         private static bool CheckChars4(this string s, ref int pos, char c1, char c2, char c3, char c4)
         {
             if (pos + 3 >= s.Length)
@@ -91,21 +115,33 @@ namespace OpenDayDialogue
             return s[pos] == c1 && s[pos + 1] == c2 && s[pos + 2] == c3 && s[pos + 3] == c4;
         }
 
+        /// <summary>
+        /// Checks if a character is a delimeter or simple whitespace.
+        /// </summary>
+        /// <returns>True or false.</returns>
         private static bool IsDelimeter(char c)
         {
-            return c == ' ' || c == ':' || c == '=' || c == '+' || c == '-' || c == '*' || c == '/' || c == '%' || c == '^' || c == '>' || c == '<' || c == '(' || c == ')' || c == '!' || c == '"';
+            return Char.IsWhiteSpace(c) || c == ':' || c == '=' || c == '+' || c == '-' || c == '*' || c == '/' || c == '%' || c == '^' || c == '>' || c == '<' || c == '(' || c == ')' || c == '!' || c == '"';
         }
 
+        /// <summary>
+        /// Reads one whole "word", or non-delimeter text at a position.
+        /// </summary>
+        /// <returns>The text read.</returns>
         private static string ReadSingleWord(this string s, ref int pos)
         {
             string build = "";
-            while (pos < s.Length && !Char.IsWhiteSpace(s[pos]) && !IsDelimeter(s[pos]))
+            while (pos < s.Length && !IsDelimeter(s[pos]))
             {
                 build += s[pos++];
             }
             return build;
         }
 
+        /// <summary>
+        /// Advances the position until the character at the position is not whitespace.
+        /// </summary>
+        /// <returns>The number of whitespace characters.</returns>
         private static int SkipWhiteSpace(this string s, ref int pos)
         {
             int count = 0;
@@ -117,6 +153,10 @@ namespace OpenDayDialogue
             return count;
         }
 
+        /// <summary>
+        /// Checks if a string qualifies as a Number token.
+        /// </summary>
+        /// <returns>True or false.</returns>
         private static bool IsNumber(ref string s)
         {
             if (s.Length == 0)
@@ -132,6 +172,10 @@ namespace OpenDayDialogue
             return true;
         }
 
+        /// <summary>
+        /// Checks if a string qualifies as an Identifier token.
+        /// </summary>
+        /// <returns>True or false.</returns>
         private static bool IsIdentifier(ref string s)
         {
             if (s.Length == 0)
@@ -149,6 +193,10 @@ namespace OpenDayDialogue
             return true;
         }
 
+        /// <summary>
+        /// Generates a token stream/list with a string input.
+        /// </summary>
+        /// <returns>The complete token stream.</returns>
         public static List<Token> LexString(string input)
         {
             List<Token> tokens = new List<Token>();
@@ -206,14 +254,14 @@ namespace OpenDayDialogue
                             }
                             pos++;
                             if (Application.allFiles.Contains(str))
-                                throw new LexerException("Cannot include an already included file!");
+                                LexerError.Report("An included file was included more than once.", line);
                             Application.files.Enqueue(str);
                             Application.allFiles.Add(str);
                         }
-                        else throw new LexerException("Invalid preprocessor argument.", line);
+                        else LexerError.Report("Invalid preprocessor argument.", line);
                     } else
                     {
-                        throw new LexerException("Invalid preprocessor type.", line);
+                        LexerError.Report("Invalid preprocessor type.", line);
                     }
                     continue;
                 }
@@ -501,7 +549,7 @@ namespace OpenDayDialogue
                                 }
                             } else
                             {
-                                throw new LexerException(string.Format("Failed to find proper token at line {0}.", line + 1));
+                                LexerError.Report("Failed to find proper token.", line);
                             }
                         }
                     }
@@ -530,29 +578,16 @@ namespace OpenDayDialogue
             }
             return tokens;
         }
-    }
 
-    [Serializable]
-    internal class LexerException : Exception
-    {
-        public LexerException()
+        internal static class LexerError
         {
-        }
-
-        public LexerException(string message) : base(message)
-        {
-        }
-
-        public LexerException(string message, int line) : base("Lexer error at line " + (line + 1).ToString() + ": " + message)
-        {
-        }
-
-        public LexerException(string message, Exception innerException) : base(message, innerException)
-        {
-        }
-
-        protected LexerException(SerializationInfo info, StreamingContext context) : base(info, context)
-        {
+            /// <summary>
+            /// Reports an error in the lexer.
+            /// </summary>
+            public static void Report(string message, int line)
+            {
+                Errors.Report(message, (line + 1).ToString(), CodeError.Severity.Error, "Lexer");
+            }
         }
     }
 }

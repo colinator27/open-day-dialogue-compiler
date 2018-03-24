@@ -58,7 +58,10 @@ namespace OpenDayDialogue
                         {
                             Queue<string> q = Application.queuedTranslations[Application.currentFile].Item2["s:" + c.GetCurrentNamespace()];
                             if (q.Count == 0)
-                                throw new Exception("Translation file string count does not match with the actual code!");
+                            {
+                                c.Error("Translation file string count does not match with the actual code!");
+                                return 0;
+                            }
                             v.valueString = q.Dequeue();
                         }
                     }
@@ -216,6 +219,11 @@ namespace OpenDayDialogue
         private Stack<string> currentNamespace;
         private Stack<Tuple<SceneWhileLoop, uint/*begin label*/, uint/*end label*/>> whileLoops;
 
+        public void Error(string message)
+        {
+            Errors.Report(message, "?", CodeError.Severity.ErrorDeadly, "Compiler", GetCurrentNamespace());
+        }
+
         public Compiler()
         {
             program = new Program();
@@ -261,7 +269,10 @@ namespace OpenDayDialogue
                     {
                         uint keyID = program.RegisterString(GetFullSymbolName(def.key));
                         if (program.definitions.ContainsKey(keyID))
-                            throw new Exception(string.Format("Found duplicate definitions for {0}", GetFullSymbolName(def.key)));
+                        {
+                            Error(string.Format("Found duplicate definitions for {0}", GetFullSymbolName(def.key)));
+                            return;
+                        }
                         if (Application.generateTranslations)
                         {
                             Application.genTranslations[Application.currentFile].Item2["d:" + GetCurrentNamespace()].Add(def.value); 
@@ -271,8 +282,11 @@ namespace OpenDayDialogue
                             {
                                 Queue<string> q = Application.queuedTranslations[Application.currentFile].Item2["d:" + GetCurrentNamespace()];
                                 if (q.Count == 0)
-                                    throw new Exception(string.Format("Translation file string count does not match with the actual code!\nItem identifier: {0}",
+                                {
+                                    Error(string.Format("Translation file string count does not match with the actual code!\nItem identifier: {0}",
                                                                       "d:" + GetCurrentNamespace()));
+                                    return;
+                                }
                                 def.value = q.Dequeue();
                             }
                         }
@@ -285,8 +299,9 @@ namespace OpenDayDialogue
                         {
                             if (Application.queuedTranslations[Application.currentFile].Item2["d:" + GetCurrentNamespace()].Count != 0)
                             {
-                                throw new Exception(string.Format("Translation file string count does not match with the actual code!\nItem identifier: {0}",
+                                Error(string.Format("Translation file string count does not match with the actual code!\nItem identifier: {0}",
                                                                   "d:" + GetCurrentNamespace()));
+                                return;
                             }
                         }
                     }
@@ -310,8 +325,9 @@ namespace OpenDayDialogue
                         {
                             if (Application.queuedTranslations[Application.currentFile].Item2["s:" + GetCurrentNamespace()].Count != 0)
                             {
-                                throw new Exception(string.Format("Translation file string count does not match with the actual code!\nItem identifier: {0}",
+                                Error(string.Format("Translation file string count does not match with the actual code!\nItem identifier: {0}",
                                                                   "s:" + GetCurrentNamespace()));
+                                return;
                             }
                         }
                     }
@@ -323,7 +339,10 @@ namespace OpenDayDialogue
         public void GenerateCode(Scene scene)
         {
             if (program.scenes.ContainsKey(program.RegisterString(GetCurrentNamespace())))
-                throw new Exception("Only one definition of a scene is permitted.");
+            {
+                Error(string.Format("Only one definition of a scene is permitted. Scene name: \"{0}\"", GetCurrentNamespace()));
+                return;
+            }
 
             // Add the label
             uint labelID = program.GetNextLabel();
@@ -363,8 +382,11 @@ namespace OpenDayDialogue
                         {
                             Queue<string> q = Application.queuedTranslations[Application.currentFile].Item2["s:" + GetCurrentNamespace()];
                             if (q.Count == 0)
-                                throw new Exception(string.Format("Translation file string count does not match with the actual code!\nItem identifier: {0}",
+                            {
+                                Error(string.Format("Translation file string count does not match with the actual code!\nItem identifier: {0}",
                                                                   "s:" + GetCurrentNamespace()));
+                                return;
+                            }
                             statement.text.text = q.Dequeue();
                         }
                     }
@@ -468,8 +490,11 @@ namespace OpenDayDialogue
                                 {
                                     Queue<string> q = Application.queuedTranslations[Application.currentFile].Item2["s:" + GetCurrentNamespace()];
                                     if (q.Count == 0)
-                                        throw new Exception(string.Format("Translation file string count does not match with the actual code!\nItem identifier: {0}",
+                                    {
+                                        Error(string.Format("Translation file string count does not match with the actual code!\nItem identifier: {0}",
                                                                   "s:" + GetCurrentNamespace()));
+                                        return;
+                                    }
                                     c.choiceText = q.Dequeue();
                                 }
                             }
@@ -488,8 +513,11 @@ namespace OpenDayDialogue
                                 {
                                     Queue<string> q = Application.queuedTranslations[Application.currentFile].Item2["s:" + GetCurrentNamespace()];
                                     if (q.Count == 0)
-                                        throw new Exception(string.Format("Translation file string count does not match with the actual code!\nItem identifier: {0}",
+                                    {
+                                        Error(string.Format("Translation file string count does not match with the actual code!\nItem identifier: {0}",
                                                                   "s:" + GetCurrentNamespace()));
+                                        return;
+                                    }
                                     c.choiceText = q.Dequeue();
                                 }
                             }
@@ -527,12 +555,18 @@ namespace OpenDayDialogue
                     break;
                 case SceneStatement.Type.Label:
                     if (!program.customLabels.ContainsKey(statement.label.name))
-                        throw new Exception(string.Format("Somehow, the compiler failed to register a label ID for label \"{0}\". This shouldn't happen.", statement.label.name));
+                    {
+                        Error(string.Format("Somehow, the compiler failed to register a label ID for label \"{0}\". This shouldn't happen.", statement.label.name));
+                        return;
+                    }
                     Emit(Instruction.Opcode.Label, program.customLabels[statement.label.name]);
                     break;
                 case SceneStatement.Type.Jump:
                     if (!program.customLabels.ContainsKey(statement.jump.labelName))
-                        throw new Exception(string.Format("Failed to find label with name \"{0}\". Invalid jump statement.", statement.jump.labelName));
+                    {
+                        Error(string.Format("Failed to find label with name \"{0}\". Invalid jump statement.", statement.jump.labelName));
+                        return;
+                    }
                     Emit(Instruction.Opcode.Jump, program.customLabels[statement.jump.labelName]);
                     break;
                 case SceneStatement.Type.WhileLoop:
@@ -573,7 +607,8 @@ namespace OpenDayDialogue
                             Emit(Instruction.Opcode.Jump, whileLoops.Peek().Item3);
                             break;
                         default:
-                            throw new Exception("Invalid control flow keyword. Honestly, this should never happen.");
+                            Error("Invalid control flow keyword.");
+                            return;
                     }
                     break;
             }
@@ -779,7 +814,7 @@ namespace OpenDayDialogue
                         case "<": op = Instruction.Opcode.BOLessThan; break;
                         case ">": op = Instruction.Opcode.BOGreater; break;
                         case "!": op = Instruction.Opcode.BOInvert; break;
-                        default: throw new Exception("Invalid function");
+                        default: Error("Invalid function"); return;
                     }
                     Emit(op);
                 }

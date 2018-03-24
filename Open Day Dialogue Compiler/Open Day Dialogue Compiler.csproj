@@ -47,6 +47,7 @@
   <ItemGroup>
     <Compile Include="BytecodeWriter.cs" />
     <Compile Include="Compiler.cs" />
+    <Compile Include="Errors.cs" />
     <Compile Include="Functions.cs" />
     <Compile Include="Lexer.cs" />
     <Compile Include="Parser.cs" />

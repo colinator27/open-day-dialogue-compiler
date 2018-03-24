@@ -23,6 +23,7 @@ namespace OpenDayDialogue
         public static bool translationIgnoreHash = false;
         public static Dictionary<string/*filename*/, Tuple<string/*file hash*/, Dictionary<string/*symbol name*/, List<string>/*strings*/>>> genTranslations;
         public static Dictionary<string/*filename*/, Tuple<string/*file hash*/, Dictionary<string/*symbol name*/, Queue<string>/*strings*/>>> queuedTranslations;
+        public static bool errorsLogItems = false;
 
         protected static void Main(string[] args)
         {
@@ -40,6 +41,7 @@ namespace OpenDayDialogue
                 { "apply-translations", "Will apply translation files if they are found with the source code files. They must be the source file's name followed by '.opdat'.", x => applyTranslations = (x != null) },
                 { "ignore-hash", "When applying translation files, ignore the original file hash. Warning: This can be risky.", x => translationIgnoreHash = (x != null) },
                 { "show-instructions", "Show the final list of instructions when the program finishes compiling.", x => showInstructions = (x != null) },
+                { "err-log-items", "When an error gets logged, it will include the item's name if possible.", x => errorsLogItems = (x != null) },
                 { "h|help", "Show this help menu.", h => showHelp = (h != null) }
             };
 
@@ -153,14 +155,11 @@ namespace OpenDayDialogue
 
                 // Create a token stream from input file
                 Console.WriteLine("Lexing...");
-                List<Token> tokens;
-                try
+                List<Token> tokens = Lexer.LexString(text);
+                if (!Errors.CanContinue())
                 {
-                    tokens = Lexer.LexString(text);
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine(e.Message);
+                    Console.WriteLine("Compilation stopped due to errors.");
+                    Console.WriteLine(Errors.GetErrors());
                     return;
                 }
 
@@ -171,9 +170,17 @@ namespace OpenDayDialogue
                 {
                     p = new Parser(tokens);
                 }
-                catch (Exception e)
+                catch (FatalErrorException e)
                 {
-                    Console.WriteLine(e.Message);
+                    Console.WriteLine("Fatal code error: " + e.Message);
+                    Console.WriteLine("Compilation stopped due to errors.");
+                    return;
+                }
+
+                if (!Errors.CanContinue())
+                {
+                    Console.WriteLine("Compilation stopped due to errors.");
+                    Console.WriteLine(Errors.GetErrors());
                     return;
                 }
 
@@ -186,6 +193,13 @@ namespace OpenDayDialogue
                 catch (Exception e)
                 {
                     Console.WriteLine(e.Message);
+                    return;
+                }
+
+                if (!Errors.CanContinue())
+                {
+                    Console.WriteLine("Compilation stopped due to errors.");
+                    Console.WriteLine(Errors.GetErrors());
                     return;
                 }
             }
@@ -240,6 +254,12 @@ namespace OpenDayDialogue
             watch.Stop();
 
             Console.WriteLine("Completed in {0} ms.", watch.ElapsedMilliseconds);
+
+            if (Errors.errors.Count > 0)
+            {
+                Console.WriteLine(Errors.GetErrors());
+            }
+
             Console.WriteLine("\n\nStatistics:\n\nInstruction count: {0}\nUnique command count: {1}" +
                               "\nDefinition count: {2}\nScene count: {3}\nUnique string count: {4}" +
                               "\nUnique value count: {5}", 

@@ -53,7 +53,8 @@ namespace OpenDayDialogue
             }
             else
             {
-                throw new ParserException("Unable to find any statement to parse!");
+                Parser.ParserError.ReportSync(parser, "Unable to find any statement to parse!", parser.tokenStream.Peek().line + 1);
+                return;
             }
         }
     }
@@ -64,7 +65,7 @@ namespace OpenDayDialogue
 
         public static bool CanParse(Parser parser)
         {
-            return parser.IsNextToken(Token.TokenType.String) && !parser.AreNextTokens(Token.TokenType.String, Token.TokenType.Colon);
+            return parser.IsNextToken(Token.TokenType.String) && !parser.IsTokenAfterNext(Token.TokenType.Colon);
         }
 
         public SceneText(Node parent, Parser parser, string content) : base(parent, parser)
@@ -74,8 +75,11 @@ namespace OpenDayDialogue
 
         public SceneText(Node parent, Parser parser) : base(parent, parser)
         {
-            text = parser.EnsureToken(Token.TokenType.String).content;
-            parser.EnsureToken(Token.TokenType.EndOfLine);
+            Token t = parser.EnsureToken(Token.TokenType.String);
+            if (t == null) return;
+            text = t.content;
+
+            if (parser.EnsureToken(Token.TokenType.EndOfLine) == null) return;
         }
     }
 
@@ -103,13 +107,16 @@ namespace OpenDayDialogue
             {
                 if (parser.IsNextToken(Token.TokenType.Identifier))
                 {
-                    args.Add(new Value(this, parser, parser.EnsureToken(Token.TokenType.Identifier).content));
+                    Token t = parser.EnsureToken(Token.TokenType.Identifier);
+                    if (t == null) return;
+                    args.Add(new Value(this, parser, t.content));
                 } else if (Value.CanParse(parser))
                 {
                     args.Add(new Value(this, parser));
                 } else
                 {
-                    throw new ParserException(string.Format("Improper token for command argument around line {0}.", parser.tokenStream.Peek().line + 1));
+                    Parser.ParserError.ReportSync(parser, "Improper token for command argument.", parser.tokenStream.Peek().line + 1);
+                    return;
                 }
             }
         }
@@ -127,15 +134,20 @@ namespace OpenDayDialogue
 
         public SceneVariableAssign(Node parent, Parser parser) : base(parent, parser)
         {
-            variableName = parser.EnsureToken(Token.TokenType.VariableIdentifier).content;
+            Token t = parser.EnsureToken(Token.TokenType.VariableIdentifier);
+            if (t == null) return;
+            variableName = t.content;
             if (parser.IsNextToken(Token.TokenType.Equals))
             {
-                parser.EnsureToken(Token.TokenType.Equals);
+                if (parser.EnsureToken(Token.TokenType.Equals) == null) return;
                 value = Expression.Parse(this, parser);
-                parser.EnsureToken(Token.TokenType.EndOfLine);
+                if (value == null) return;
+                if (parser.EnsureToken(Token.TokenType.EndOfLine) == null) return;
             } else
             {
-                string op = parser.EnsureToken(Token.TokenType.SpecialAssignmentOperator).content;
+                t = parser.EnsureToken(Token.TokenType.SpecialAssignmentOperator);
+                if (t == null) return;
+                string op = t.content;
 
                 // Do work, depending on operator
                 Expression other = null;
@@ -144,22 +156,27 @@ namespace OpenDayDialogue
                 {
                     case "+=":
                         other = Expression.Parse(this, parser);
+                        if (other == null) return;
                         builtinFunc = "+";
                         break;
                     case "-=":
                         other = Expression.Parse(this, parser);
+                        if (other == null) return;
                         builtinFunc = "-";
                         break;
                     case "*=":
                         other = Expression.Parse(this, parser);
+                        if (other == null) return;
                         builtinFunc = "*";
                         break;
                     case "/=":
                         other = Expression.Parse(this, parser);
+                        if (other == null) return;
                         builtinFunc = "/";
                         break;
                     case "%=":
                         other = Expression.Parse(this, parser);
+                        if (other == null) return;
                         builtinFunc = "%";
                         break;
                     case "++":
@@ -194,7 +211,7 @@ namespace OpenDayDialogue
                     }
                 }, parser);
 
-                parser.EnsureToken(Token.TokenType.EndOfLine);
+                if (parser.EnsureToken(Token.TokenType.EndOfLine) == null) return;
             }
         }
     }
@@ -222,49 +239,51 @@ namespace OpenDayDialogue
 
         public SceneIfStatement(Node parent, Parser parser) : base(parent, parser)
         {
-            parser.EnsureToken(Token.TokenType.Keyword, "if");
+            if (parser.EnsureToken(Token.TokenType.Keyword, "if") == null) return;
             mainClause = new Clause(this);
             mainClause.expression = Expression.Parse(mainClause, parser);
-            parser.EnsureToken(Token.TokenType.Colon);
+            if (mainClause.expression == null) return;
+            if (parser.EnsureToken(Token.TokenType.Colon) == null) return;
 
-            parser.EnsureToken(Token.TokenType.Indent);
+            if (parser.EnsureToken(Token.TokenType.Indent) == null) return;
             mainClause.statements = new List<SceneStatement>();
             while (parser.tokenStream.Count > 0 && !parser.IsNextToken(Token.TokenType.Dedent))
             {
                 mainClause.statements.Add(new SceneStatement(this, parser));
             }
-            parser.EnsureToken(Token.TokenType.Dedent);
+            if (parser.EnsureToken(Token.TokenType.Dedent) == null) return;
 
             elseClauses = new List<Clause>();
             while (parser.IsNextToken(Token.TokenType.Keyword) && parser.IsNextToken("else"))
             {
-                parser.EnsureToken(Token.TokenType.Keyword, "else");
+                if (parser.EnsureToken(Token.TokenType.Keyword, "else") == null) return;
                 if (parser.IsNextToken(Token.TokenType.Keyword) && parser.IsNextToken("if"))
                 {
-                    parser.EnsureToken(Token.TokenType.Keyword, "if");
+                    if (parser.EnsureToken(Token.TokenType.Keyword, "if") == null) return;
                     Clause next = new Clause(this);
                     next.expression = Expression.Parse(next, parser);
-                    parser.EnsureToken(Token.TokenType.Colon);
-                    parser.EnsureToken(Token.TokenType.Indent);
+                    if (next.expression == null) return;
+                    if (parser.EnsureToken(Token.TokenType.Colon) == null) return;
+                    if (parser.EnsureToken(Token.TokenType.Indent) == null) return;
                     next.statements = new List<SceneStatement>();
                     while (parser.tokenStream.Count > 0 && !parser.IsNextToken(Token.TokenType.Dedent))
                     {
                         next.statements.Add(new SceneStatement(this, parser));
                     }
-                    parser.EnsureToken(Token.TokenType.Dedent);
+                    if (parser.EnsureToken(Token.TokenType.Dedent) == null) return;
                     elseClauses.Add(next);
                 } else
                 {
                     // Final else clause, read it and break out of loop
-                    parser.EnsureToken(Token.TokenType.Colon);
+                    if (parser.EnsureToken(Token.TokenType.Colon) == null) return;
                     Clause final = new Clause(this);
-                    parser.EnsureToken(Token.TokenType.Indent);
+                    if (parser.EnsureToken(Token.TokenType.Indent) == null) return;
                     final.statements = new List<SceneStatement>();
                     while (parser.tokenStream.Count > 0 && !parser.IsNextToken(Token.TokenType.Dedent))
                     {
                         final.statements.Add(new SceneStatement(this, parser));
                     }
-                    parser.EnsureToken(Token.TokenType.Dedent);
+                    if (parser.EnsureToken(Token.TokenType.Dedent) == null) return;
                     elseClauses.Add(final);
                     break;
                 }
@@ -294,34 +313,39 @@ namespace OpenDayDialogue
             if (parser.IsNextToken(Token.TokenType.Keyword))
             {
                 // Regular choice statement
-                parser.EnsureToken(Token.TokenType.Keyword, "choice");
-                parser.EnsureToken(Token.TokenType.Colon);
+                if (parser.EnsureToken(Token.TokenType.Keyword, "choice") == null) return;
+                if (parser.EnsureToken(Token.TokenType.Colon) == null) return;
 
                 choices = new List<Choice>();
-                parser.EnsureToken(Token.TokenType.Indent);
+                if (parser.EnsureToken(Token.TokenType.Indent) == null) return;
                 while (parser.tokenStream.Count > 0 && !parser.IsNextToken(Token.TokenType.Dedent))
                 {
+                    Token t = parser.EnsureToken(Token.TokenType.String);
+                    if (t == null) return;
                     Choice choice = new Choice()
                     {
-                        choiceText = parser.EnsureToken(Token.TokenType.String).content,
+                        choiceText = t.content,
                         statements = new List<SceneStatement>()
                     };
-                    parser.EnsureToken(Token.TokenType.Colon);
+
+                    if (parser.EnsureToken(Token.TokenType.Colon) == null) return;
+
                     if (parser.IsNextToken(Token.TokenType.Keyword) && parser.IsNextToken("if"))
                     {
-                        parser.EnsureToken(Token.TokenType.Keyword, "if");
+                        if (parser.EnsureToken(Token.TokenType.Keyword, "if") == null) return;
                         choice.condition = Expression.Parse(this, parser);
+                        if (choice.condition == null) return;
                     }
-                    parser.EnsureToken(Token.TokenType.Indent);
+                    if (parser.EnsureToken(Token.TokenType.Indent) == null) return;
                     while (parser.tokenStream.Count > 0 && !parser.IsNextToken(Token.TokenType.Dedent))
                     {
                         choice.statements.Add(new SceneStatement(this, parser));
                     }
-                    parser.EnsureToken(Token.TokenType.Dedent);
+                    if (parser.EnsureToken(Token.TokenType.Dedent) == null) return;
 
                     choices.Add(choice);
                 }
-                parser.EnsureToken(Token.TokenType.Dedent);
+                if (parser.EnsureToken(Token.TokenType.Dedent) == null) return;
             } else
             {
                 // Modified choice statement (no keyword and indent, etc.)
@@ -329,23 +353,26 @@ namespace OpenDayDialogue
 
                 while (parser.tokenStream.Count > 0 && parser.AreNextTokens(Token.TokenType.String, Token.TokenType.Colon))
                 {
+                    Token t = parser.EnsureToken(Token.TokenType.String);
+                    if (t == null) return;
                     Choice choice = new Choice()
                     {
-                        choiceText = parser.EnsureToken(Token.TokenType.String).content,
+                        choiceText = t.content,
                         statements = new List<SceneStatement>()
                     };
-                    parser.EnsureToken(Token.TokenType.Colon);
+                    if (parser.EnsureToken(Token.TokenType.Colon) == null) return;
                     if (parser.IsNextToken(Token.TokenType.Keyword) && parser.IsNextToken("if"))
                     {
-                        parser.EnsureToken(Token.TokenType.Keyword, "if");
+                        if (parser.EnsureToken(Token.TokenType.Keyword, "if") == null) return;
                         choice.condition = Expression.Parse(this, parser);
+                        if (choice.condition == null) return;
                     }
-                    parser.EnsureToken(Token.TokenType.Indent);
+                    if (parser.EnsureToken(Token.TokenType.Indent) == null) return;
                     while (parser.tokenStream.Count > 0 && !parser.IsNextToken(Token.TokenType.Dedent))
                     {
                         choice.statements.Add(new SceneStatement(this, parser));
                     }
-                    parser.EnsureToken(Token.TokenType.Dedent);
+                    if (parser.EnsureToken(Token.TokenType.Dedent) == null) return;
 
                     choices.Add(choice);
                 }
@@ -364,9 +391,12 @@ namespace OpenDayDialogue
 
         public SceneLabel(Node parent, Parser parser) : base(parent, parser)
         {
-            name = parser.EnsureToken(Token.TokenType.Identifier).content;
-            parser.EnsureToken(Token.TokenType.Colon);
-            parser.EnsureToken(Token.TokenType.EndOfLine);
+            Token t = parser.EnsureToken(Token.TokenType.Identifier);
+            if (t == null) return;
+            name = t.content;
+
+            if (parser.EnsureToken(Token.TokenType.Colon) == null) return;
+            if (parser.EnsureToken(Token.TokenType.EndOfLine) == null) return;
         }
     }
 
@@ -381,9 +411,13 @@ namespace OpenDayDialogue
 
         public SceneJump(Node parent, Parser parser) : base(parent, parser)
         {
-            parser.EnsureToken(Token.TokenType.Colon);
-            labelName = parser.EnsureToken(Token.TokenType.Identifier).content;
-            parser.EnsureToken(Token.TokenType.EndOfLine);
+            if (parser.EnsureToken(Token.TokenType.Colon) == null) return;
+
+            Token t = parser.EnsureToken(Token.TokenType.Identifier);
+            if (t == null) return;
+            labelName = t.content;
+
+            if (parser.EnsureToken(Token.TokenType.EndOfLine) == null) return;
         }
     }
 
@@ -399,17 +433,18 @@ namespace OpenDayDialogue
 
         public SceneWhileLoop(Node parent, Parser parser) : base(parent, parser)
         {
-            parser.EnsureToken(Token.TokenType.Keyword, "while");
+            if (parser.EnsureToken(Token.TokenType.Keyword, "while") == null) return;
             condition = Expression.Parse(this, parser);
-            parser.EnsureToken(Token.TokenType.Colon);
+            if (condition == null) return;
+            if (parser.EnsureToken(Token.TokenType.Colon) == null) return;
 
-            parser.EnsureToken(Token.TokenType.Indent);
+            if (parser.EnsureToken(Token.TokenType.Indent) == null) return;
             statements = new List<SceneStatement>();
             while (parser.tokenStream.Count > 0 && !parser.IsNextToken(Token.TokenType.Dedent))
             {
                 statements.Add(new SceneStatement(this, parser));
             }
-            parser.EnsureToken(Token.TokenType.Dedent);
+            if (parser.EnsureToken(Token.TokenType.Dedent) == null) return;
         }
     }
 
@@ -425,10 +460,17 @@ namespace OpenDayDialogue
 
         public SceneSpecialName(Node parent, Parser parser) : base(parent, parser)
         {
-            charName = parser.EnsureToken(Token.TokenType.Identifier).content;
-            parser.EnsureToken(Token.TokenType.Colon);
-            dialogue = parser.EnsureToken(Token.TokenType.String).content;
-            parser.EnsureToken(Token.TokenType.EndOfLine);
+            Token t = parser.EnsureToken(Token.TokenType.Identifier);
+            if (t == null) return;
+            charName = t.content;
+
+            if (parser.EnsureToken(Token.TokenType.Colon) == null) return;
+
+            t = parser.EnsureToken(Token.TokenType.String);
+            if (t == null) return;
+            dialogue = t.content;
+
+            if (parser.EnsureToken(Token.TokenType.EndOfLine) == null) return;
         }
     }
 
@@ -444,9 +486,15 @@ namespace OpenDayDialogue
 
         public SceneSpecialCommand(Node parent, Parser parser) : base(parent, parser)
         {
-            string op = parser.EnsureToken(Token.TokenType.CompareOperator).content;
+            Token t = parser.EnsureToken(Token.TokenType.CompareOperator);
+            if (t == null) return;
+            string op = t.content;
             if (parser.IsNextToken(Token.TokenType.Identifier))
-                operand = parser.EnsureToken(Token.TokenType.Identifier).content;
+            {
+                t = parser.EnsureToken(Token.TokenType.Identifier);
+                if (t == null) return;
+                operand = t.content;
+            }
             switch (op)
             {
                 case ">":
@@ -456,7 +504,9 @@ namespace OpenDayDialogue
                     commandName = "exit";
                     break;
                 default:
-                    throw new ParserException(string.Format("Unsupported special command for operator \"{0}\". At line {1}.", op, parser.tokenStream.Peek().line + 1));
+                    Parser.ParserError.ReportSync(parser, string.Format("Unsupported special command for operator \"{0}\".", op), parser.tokenStream.Peek().line + 1);
+                    commandName = "";
+                    break;
             }
         }
     }
@@ -472,7 +522,9 @@ namespace OpenDayDialogue
 
         public SceneControlFlow(Node parent, Parser parser) : base(parent, parser)
         {
-            content = parser.EnsureToken(Token.TokenType.Keyword).content;
+            Token t = parser.EnsureToken(Token.TokenType.Keyword);
+            if (t == null) return;
+            content = t.content;
         }
     }
 
@@ -570,7 +622,7 @@ namespace OpenDayDialogue
                 controlFlow = new SceneControlFlow(this, parser);
             } else
             {
-                throw new ParserException(string.Format("Unable to find any scene statement to parse! Around line {0}.", parser.tokenStream.Peek().line + 1));
+                Parser.ParserError.ReportSync(parser, "Unable to find any scene statement to parse!", parser.tokenStream.Peek().line + 1);
             }
         }
     }
@@ -587,9 +639,15 @@ namespace OpenDayDialogue
 
         public TextDefinition(Node parent, Parser parser) : base(parent, parser)
         {
-            key = parser.EnsureToken(Token.TokenType.Identifier).content;
-            parser.EnsureToken(Token.TokenType.Equals);
-            value = parser.EnsureToken(Token.TokenType.String).content;
+            Token t = parser.EnsureToken(Token.TokenType.Identifier);
+            if (t == null) return;
+            key = t.content;
+
+            if (parser.EnsureToken(Token.TokenType.Equals) == null) return;
+
+            t = parser.EnsureToken(Token.TokenType.String);
+            if (t == null) return;
+            value = t.content;
         }
     }
 
@@ -605,17 +663,25 @@ namespace OpenDayDialogue
 
         public DefinitionGroup(Node parent, Parser parser) : base(parent, parser)
         {
-            parser.EnsureToken(Token.TokenType.Keyword, "definitions");
-            groupName = parser.EnsureToken(Token.TokenType.Identifier).content;
-            parser.EnsureToken(Token.TokenType.Colon);
-            
-            parser.EnsureToken(Token.TokenType.Indent);
+            if (parser.EnsureToken(Token.TokenType.Keyword, "definitions") == null) return;
+
+            Token t = parser.EnsureToken(Token.TokenType.Identifier);
+            if (t == null) return;
+            groupName = t.content;
+
+            parser.currentItem = groupName;
+
+            if (parser.EnsureToken(Token.TokenType.Colon) == null) return;
+
+            if (parser.EnsureToken(Token.TokenType.Indent) == null) return;
             definitions = new List<TextDefinition>();
             while (parser.tokenStream.Count > 0 && !parser.IsNextToken(Token.TokenType.Dedent))
             {
                 definitions.Add(new TextDefinition(this, parser));
             }
-            parser.EnsureToken(Token.TokenType.Dedent);
+            if (parser.EnsureToken(Token.TokenType.Dedent) == null) return;
+
+            parser.currentItem = "";
         }
     }
 
@@ -631,17 +697,25 @@ namespace OpenDayDialogue
 
         public Scene(Node parent, Parser parser) : base(parent, parser)
         {
-            parser.EnsureToken(Token.TokenType.Keyword, "scene");
-            name = parser.EnsureToken(Token.TokenType.Identifier).content;
-            parser.EnsureToken(Token.TokenType.Colon);
+            if (parser.EnsureToken(Token.TokenType.Keyword, "scene") == null) return;
 
-            parser.EnsureToken(Token.TokenType.Indent);
+            Token t = parser.EnsureToken(Token.TokenType.Identifier);
+            if (t == null) return;
+            name = t.content;
+
+            parser.currentItem = name;
+
+            if (parser.EnsureToken(Token.TokenType.Colon) == null) return;
+
+            if (parser.EnsureToken(Token.TokenType.Indent) == null) return;
             statements = new List<SceneStatement>();
             while (parser.tokenStream.Count > 0 && !parser.IsNextToken(Token.TokenType.Dedent))
             {
                 statements.Add(new SceneStatement(this, parser));
             }
-            parser.EnsureToken(Token.TokenType.Dedent);
+            if (parser.EnsureToken(Token.TokenType.Dedent) == null) return;
+
+            parser.currentItem = "";
         }
     }
 
@@ -657,9 +731,13 @@ namespace OpenDayDialogue
 
         public Namespace(Node parent, Parser parser) : base(parent, parser)
         {
-            parser.EnsureToken(Token.TokenType.Keyword, "namespace");
-            name = parser.EnsureToken(Token.TokenType.Identifier).content;
-            parser.EnsureToken(Token.TokenType.Colon);
+            if (parser.EnsureToken(Token.TokenType.Keyword, "namespace") == null) return;
+
+            Token t = parser.EnsureToken(Token.TokenType.Identifier);
+            if (t == null) return;
+            name = t.content;
+
+            if (parser.EnsureToken(Token.TokenType.Colon) == null) return;
 
             block = new Block(this, parser);
         }
@@ -677,7 +755,9 @@ namespace OpenDayDialogue
         public Block(Node parent, Parser parser) : base(parent, parser)
         {
             if (parent != null)
-                parser.EnsureToken(Token.TokenType.Indent);
+            {
+                if (parser.EnsureToken(Token.TokenType.Indent) == null) return;
+            }
 
             statements = new List<Statement>();
             while (parser.tokenStream.Count > 0 && !parser.IsNextToken(Token.TokenType.Dedent))
@@ -686,7 +766,9 @@ namespace OpenDayDialogue
             }
 
             if (parent != null)
-                parser.EnsureToken(Token.TokenType.Dedent);
+            {
+                if (parser.EnsureToken(Token.TokenType.Dedent) == null) return;
+            }
         }
     }
 
@@ -716,6 +798,9 @@ namespace OpenDayDialogue
             
         }
 
+        /// <summary>
+        /// Generates an expression tree from the current Parser, with its token stream
+        /// </summary>
         public static Expression Parse(Node parent, Parser parser)
         {
             // Put the tokens into reverse polish notation using the shunting-yard algorithm
@@ -744,6 +829,7 @@ namespace OpenDayDialogue
             while (parser.tokenStream.Count > 0 && parser.IsNextTokenDontRemoveEOL(accepted))
             {
                 Token next = parser.EnsureToken(accepted);
+                if (next == null) return null;
                 switch (next.type)
                 {
                     case Token.TokenType.Number:
@@ -768,12 +854,19 @@ namespace OpenDayDialogue
                             }
                         } catch (InvalidOperationException)
                         {
-                            throw new ParserException(string.Format("Detected unclosed parentheses in expression. Around line {0}.", next.line + 1));
+                            Parser.ParserError.ReportSync(parser, "Unclosed parentheses in expression.", next.line);
+                            return null;
                         }
                         if (operatorStack.Peek().type != Token.TokenType.OpenParen)
-                            throw new ParserException(string.Format("Unknown error parsing function around line {0}.", operatorStack.Peek().line + 1));
+                        {
+                            Parser.ParserError.ReportSync(parser, "Unknown error parsing function.", operatorStack.Peek().line + 1);
+                            return null;
+                        }
                         if (parser.IsNextToken(Token.TokenType.CloseParen, Token.TokenType.Comma))
-                            throw new ParserException(string.Format("Expected expression around line {0}.", parser.tokenStream.Peek().line + 1));
+                        {
+                            Parser.ParserError.ReportSync(parser, "Expected expression.", parser.tokenStream.Peek().line + 1);
+                            return null;
+                        }
                         functionStack.Peek().paramCount++;
                         break;
                     case Token.TokenType.OpenParen:
@@ -790,11 +883,15 @@ namespace OpenDayDialogue
                         }
                         catch (InvalidOperationException)
                         {
-                            throw new ParserException(string.Format("Detected unclosed parentheses in expression. Around line {0}.", next.line + 1));
+                            Parser.ParserError.ReportSync(parser, "Unclosed parentheses in expression.", next.line);
+                            return null;
                         }
 
                         if (operatorStack.Count < 1)
-                            throw new ParserException(string.Format("Error parsing expression. Around line {0}.", next.line + 1));
+                        {
+                            Parser.ParserError.ReportSync(parser, "Error parsing expression.", next.line + 1);
+                            return null;
+                        }
                         if (operatorStack.Peek().type == Token.TokenType.Identifier)
                         {
                             if (last.type != Token.TokenType.OpenParen)
@@ -837,7 +934,10 @@ namespace OpenDayDialogue
                 expressionRPN.Enqueue(operatorStack.Pop());
 
             if (expressionRPN.Count == 0)
-                throw new ParserException(string.Format("Expected expression, but none found. Around line {0}.", parser.tokenStream.Peek().line + 1));
+            {
+                Parser.ParserError.ReportSync(parser, "Expected expression, but none found.", parser.tokenStream.Peek().line + 1);
+                return null;
+            }
 
             // Build the tree
             Token first = expressionRPN.Peek();
@@ -848,8 +948,12 @@ namespace OpenDayDialogue
                 if (next.type == Token.TokenType.BinaryOperator || next.type == Token.TokenType.CompareOperator || next.type == Token.TokenType.UnaryMinus || next.type == Token.TokenType.UnaryInvert)
                 {
                     Operator.OperatorInfo info = Operator.GetTokenOperator(next);
+                    if (info == null) return null;
                     if (evaluationStack.Count < info.args)
-                        throw new ParserException(string.Format("Not enough arguments for operator \"{0}\" in expression around line {1}.", next.content, next.line + 1));
+                    {
+                        Parser.ParserError.ReportSync(parser, string.Format("Not enough arguments for operator \"{0}\" in expression.", next.content), next.line + 1);
+                        return null;
+                    }
                     List<Expression> parameters = new List<Expression>();
                     for (int i = 0; i < info.args; i++)
                         parameters.Add(evaluationStack.Pop());
@@ -883,11 +987,17 @@ namespace OpenDayDialogue
             }
 
             if (evaluationStack.Count != 1)
-                throw new ParserException(string.Format("Failed to reduce stack when parsing expression. Around line {0}.", parser.tokenStream.Peek().line + 1));
+            {
+                Parser.ParserError.ReportSync(parser, "Failed to reduce stack when parsing expression.", parser.tokenStream.Peek().line + 1);
+                return null;
+            }
 
             return evaluationStack.Pop();
         }
 
+        /// <summary>
+        /// Checks if precendence applies when parsing expressions.
+        /// </summary>
         private static bool PrecedenceApplies(Token t1, Stack<Token> operatorStack)
         {
             if (operatorStack.Count == 0)
@@ -896,7 +1006,7 @@ namespace OpenDayDialogue
             }
             if (t1.type != Token.TokenType.BinaryOperator && t1.type != Token.TokenType.CompareOperator && t1.type != Token.TokenType.UnaryMinus && t1.type != Token.TokenType.UnaryInvert)
             {
-                throw new ParserException(string.Format("Invalid operator in expression. Around line {0}.", t1.line + 1));
+                Parser.ParserError.Report("Invalid operator in expression.", t1.line + 1);
             }
             Token t2 = operatorStack.Peek();
 
@@ -928,7 +1038,7 @@ namespace OpenDayDialogue
             Right
         }
 
-        public struct OperatorInfo
+        public class OperatorInfo
         {
             public Associativity assoc;
             public int precedence;
@@ -942,6 +1052,9 @@ namespace OpenDayDialogue
             }
         }
 
+        /// <summary>
+        /// Gets operator information from a token.
+        /// </summary>
         public static OperatorInfo GetTokenOperator(Token t)
         {
             if (t.type == Token.TokenType.UnaryMinus || t.type == Token.TokenType.UnaryInvert)
@@ -970,7 +1083,8 @@ namespace OpenDayDialogue
                 case "^^":
                     return new OperatorInfo(Associativity.Left, 2, 2);
                 default:
-                    throw new ParserException(string.Format("Invalid operator detected. Around line {0}.", t.line + 1));
+                    Parser.ParserError.Report("Invalid operator detected", t.line + 1);
+                    return null;
             }
         }
 
@@ -1002,6 +1116,9 @@ namespace OpenDayDialogue
 
         public uint stringID; // For use by compiler
 
+        /// <summary>
+        /// Initializes fields with a token.
+        /// </summary>
         public void FromToken(Token t)
         {
             switch (t.type)
@@ -1037,7 +1154,7 @@ namespace OpenDayDialogue
                     valueVariable = t.content;
                     break;
                 default:
-                    throw new ParserException(string.Format("Invalid Value token type around line {0}.", t.line + 1));
+                    throw new FatalErrorException(string.Format("Invalid Value token type around line {0}.", t.line + 1));
             }
         }
 
@@ -1117,6 +1234,9 @@ namespace OpenDayDialogue
             valueInt32 = int32;
         }
 
+        /// <summary>
+        /// Gets a string readable version of the value.
+        /// </summary>
         public override string ToString()
         {
             switch (type)
@@ -1140,6 +1260,9 @@ namespace OpenDayDialogue
             }
         }
 
+        /// <summary>
+        /// Converts a Value to another type.
+        /// </summary>
         public Value ConvertTo(Value.Type type)
         {
             if (this.type == type)
@@ -1240,7 +1363,7 @@ namespace OpenDayDialogue
                     break;
             }
 
-            throw new ParserException(string.Format("Cannot convert type {0} to {1}.", this.type, type));
+            throw new FatalErrorException(string.Format("Cannot convert type {0} to {1}.", this.type, type));
         }
     }
 
@@ -1248,74 +1371,135 @@ namespace OpenDayDialogue
     {
         public Queue<Token> tokenStream;
         public Block block;
+        public string currentItem;
 
+        /// <summary>
+        /// Initializes a new Parser, which will automatically begin, synchronously.
+        /// </summary>
         public Parser(IEnumerable<Token> tokens)
         {
             tokenStream = new Queue<Token>(tokens);
             block = new Block(null, this);
+            currentItem = "";
         }
 
+        /// <summary>
+        /// Ensures the next token has a certain type, and consumes it.
+        /// </summary>
+        /// <returns>The token being consumed, or null.</returns>
         public Token EnsureToken(Token.TokenType type)
         {
             if (tokenStream.Count == 0)
-                throw new ParserException("Unexpected end of code.");
+            {
+                ParserError.Report("Unexpected end of code.", -1);
+                return null;
+            }
             if (type == Token.TokenType.EndOfLine)
             {
                 if (type != tokenStream.Peek().type)
-                    throw new ParserException(string.Format("Expected token of type {0}, got {1}. At line {2}.", type, tokenStream.Peek().type, tokenStream.Peek().line + 1));
+                {
+                    ParserError.ReportSync(this, string.Format("Expected token of type {0}, got {1}.", type, tokenStream.Peek().type), tokenStream.Peek().line + 1);
+                    return null;
+                }
             } else
             {
                 // If not searching for end of lines, remove them before we run into problems
                 while (tokenStream.Count > 0 && tokenStream.Peek().type == Token.TokenType.EndOfLine)
                     tokenStream.Dequeue();
                 if (tokenStream.Count == 0)
-                    throw new ParserException("Unexpected end of code.");
+                {
+                    ParserError.Report("Unexpected end of code.", -1);
+                    return null;
+                }
                 if (type != tokenStream.Peek().type)
-                    throw new ParserException(string.Format("Expected token of type {0}, got {1}. At line {2}.", type, tokenStream.Peek().type, tokenStream.Peek().line + 1));
+                {
+                    ParserError.ReportSync(this, string.Format("Expected token of type {0}, got {1}.", type, tokenStream.Peek().type), tokenStream.Peek().line + 1);
+                    return null;
+                }
             }
             return tokenStream.Dequeue();
         }
 
+        /// <summary>
+        /// Ensures the next token is one of the provided types, and consumes it.
+        /// </summary>
+        /// <returns>The token being consumed, or null.</returns>
         public Token EnsureToken(params Token.TokenType[] types)
         {
             if (tokenStream.Count == 0)
-                throw new ParserException("Unexpected end of code.");
+            {
+                ParserError.Report("Unexpected end of code.", -1);
+                return null;
+            }
             // If not searching for end of lines, remove them before we run into problems
             while (tokenStream.Count > 0 && tokenStream.Peek().type == Token.TokenType.EndOfLine)
                 tokenStream.Dequeue();
             if (tokenStream.Count == 0)
-                throw new ParserException("Unexpected end of code.");
+            {
+                ParserError.Report("Unexpected end of code.", -1);
+                return null;
+            }
             if (!types.Contains(tokenStream.Peek().type))
-                throw new ParserException(string.Format("Expected token of types {0}, but got {1}. At line {2}.", string.Join(", or ", types.Select(x => x.ToString()).ToArray()), tokenStream.Peek().type, tokenStream.Peek().line + 1));
+            {
+                ParserError.ReportSync(this, string.Format("Expected token of types {0}, but got {1}.", string.Join(", or ", types.Select(x => x.ToString()).ToArray()), tokenStream.Peek().type), tokenStream.Peek().line + 1);
+                return null;
+            }
             return tokenStream.Dequeue();
         }
 
+        /// <summary>
+        /// Ensures the next token has a type and string content, and consumes it.
+        /// </summary>
+        /// <returns>The token being consumed, or null.</returns>
         public Token EnsureToken(Token.TokenType type, string content)
         {
             // If not searching for end of lines, remove them before we run into problems
             while (tokenStream.Count > 0 && tokenStream.Peek().type == Token.TokenType.EndOfLine)
                 tokenStream.Dequeue();
             if (tokenStream.Count == 0)
-                throw new ParserException("Unexpected end of code.");
+            {
+                ParserError.Report("Unexpected end of code.", -1);
+                return null;
+            }
             if (type != tokenStream.Peek().type)
-                throw new ParserException(string.Format("Expected token of type {0}, got {1}. At line {2}.", type, tokenStream.Peek().type, tokenStream.Peek().line + 1));
+            {
+                ParserError.ReportSync(this, string.Format("Expected token of type {0}, got {1}.", type, tokenStream.Peek().type), tokenStream.Peek().line + 1);
+                return null;
+            }
             if (content != tokenStream.Peek().content)
-                throw new ParserException(string.Format("Expected token of content {0}, got {1}. At line {2}.", content, tokenStream.Peek().type, tokenStream.Peek().line + 1));
+            {
+                ParserError.ReportSync(this, string.Format("Expected token of content \"{0}\", got \"{1}\".", content, tokenStream.Peek().content), tokenStream.Peek().line + 1);
+                return null;
+            }
             return tokenStream.Dequeue();
         }
 
+        /// <summary>
+        /// Ensures the next token has a string content, and consumes it.
+        /// </summary>
+        /// <returns>The token being consumed, or null.</returns>
         public Token EnsureToken(string content)
         {
             // If not searching for end of lines, remove them before we run into problems
             while (tokenStream.Count > 0 && tokenStream.Peek().type == Token.TokenType.EndOfLine)
                 tokenStream.Dequeue();
             if (tokenStream.Count == 0)
-                throw new ParserException("Unexpected end of code.");
+            {
+                ParserError.Report("Unexpected end of code.", -1);
+                return null;
+            }
             if (content != tokenStream.Peek().content)
-                throw new ParserException(string.Format("Expected token of content {0}, got {1}. At line {2}.", content, tokenStream.Peek().type, tokenStream.Peek().line + 1));
+            {
+                ParserError.ReportSync(this, string.Format("Expected token of content \"{0}\", got \"{1}\".", content, tokenStream.Peek().content), tokenStream.Peek().line + 1);
+                return null;
+            }
             return tokenStream.Dequeue();
         }
 
+        /// <summary>
+        /// Checks if the next token is one of the types provided.
+        /// </summary>
+        /// <returns>True or false.</returns>
         public bool IsNextToken(params Token.TokenType[] types)
         {
             if (!types.Contains(Token.TokenType.EndOfLine))
@@ -1329,6 +1513,10 @@ namespace OpenDayDialogue
             return types.Contains(tokenStream.Peek().type);
         }
 
+        /// <summary>
+        /// Checks if the next tokens match the array of tokens provided, in order.
+        /// </summary>
+        /// <returns>True or false.</returns>
         public bool AreNextTokens(params Token.TokenType[] tokens)
         {
             if (tokenStream.Count < tokens.Length)
@@ -1352,6 +1540,10 @@ namespace OpenDayDialogue
             return true;
         }
 
+        /// <summary>
+        /// Checks if the next token after the next is the type provided.
+        /// </summary>
+        /// <returns>True or false.</returns>
         public bool IsTokenAfterNext(Token.TokenType t)
         {
 
@@ -1366,33 +1558,88 @@ namespace OpenDayDialogue
             return t == tokenStream.Skip(1).First().type;
         }
 
+        /// <summary>
+        /// Checks if the next token is one of the types provided, and doesn't remove end of line tokens.
+        /// </summary>
+        /// <returns>True or false.</returns>
         public bool IsNextTokenDontRemoveEOL(params Token.TokenType[] types)
         {
             return types.Contains(tokenStream.Peek().type);
         }
 
+        /// <summary>
+        /// Checks if the next token is one of the strings provided.
+        /// </summary>
+        /// <returns>True or false.</returns>
         public bool IsNextToken(params string[] contents)
         {
             return contents.Contains(tokenStream.Peek().content);
         }
+        
+        /// <summary>
+        /// Re-synchronizes the parser when a bad error is detected, so it can continue to find any other errors.
+        /// </summary>
+        public void Synchronize()
+        {
+            while (tokenStream.Count > 0)
+            {
+                if (IsNextTokenDontRemoveEOL(Token.TokenType.EndOfLine, Token.TokenType.Keyword))
+                {
+                    return;
+                } else
+                {
+                    tokenStream.Dequeue();
+                }
+            }
+        }
+
+        internal static class ParserError
+        {
+            /// <summary>
+            /// Reports an error in the parser.
+            /// </summary>
+            public static void Report(string message, int line)
+            {
+                string l = (line != -1) ? (line.ToString()) : "?";
+                Errors.Report(message, l, CodeError.Severity.ErrorDeadly, "Parser");
+            }
+
+            /// <summary>
+            /// Reports an error in the parser, and synchronizes.
+            /// </summary>
+            public static void ReportSync(Parser p, string message, int line)
+            {
+                string l = (line != -1) ? (line.ToString()) : "?";
+                Errors.Report(message, l, CodeError.Severity.ErrorDeadly, "Parser", p.currentItem);
+                p.Synchronize();
+            }
+
+            /// <summary>
+            /// Reports a warning in the parser.
+            /// </summary>
+            public static void Warn(string message, int line)
+            {
+                Errors.Report(message, line.ToString(), CodeError.Severity.Warning, "Parser");
+            }
+        }
     }
 
     [Serializable]
-    internal class ParserException : Exception
+    internal class FatalErrorException : Exception
     {
-        public ParserException()
+        public FatalErrorException()
         {
         }
 
-        public ParserException(string message) : base(message)
+        public FatalErrorException(string message) : base(message)
         {
         }
 
-        public ParserException(string message, Exception innerException) : base(message, innerException)
+        public FatalErrorException(string message, Exception innerException) : base(message, innerException)
         {
         }
 
-        protected ParserException(SerializationInfo info, StreamingContext context) : base(info, context)
+        protected FatalErrorException(SerializationInfo info, StreamingContext context) : base(info, context)
         {
         }
     }
