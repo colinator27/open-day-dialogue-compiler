@@ -10,6 +10,7 @@ namespace OpenDayDialogue
     abstract class Node
     {
         public Node parent;
+        public int? sceneLine;
 
         public Node(Node parent, Parser parser)
         {
@@ -79,6 +80,8 @@ namespace OpenDayDialogue
             if (t == null) return;
             text = t.content;
 
+            sceneLine = t.line + 1;
+
             if (parser.EnsureToken(Token.TokenType.EndOfLine) == null) return;
         }
     }
@@ -99,15 +102,18 @@ namespace OpenDayDialogue
 
         public SceneCommand(Node parent, Parser parser) : base(parent, parser)
         {
+            Token t = parser.EnsureToken(Token.TokenType.Identifier);
+            if (t == null) return;
             args = new List<Value>
             {
-               new Value(this, parser, parser.EnsureToken(Token.TokenType.Identifier).content)
+               new Value(this, parser, t.content)
             };
+            sceneLine = t.line + 1;
             while (parser.tokenStream.Count > 0 && !parser.IsNextToken(Token.TokenType.EndOfLine))
             {
                 if (parser.IsNextToken(Token.TokenType.Identifier))
                 {
-                    Token t = parser.EnsureToken(Token.TokenType.Identifier);
+                    t = parser.EnsureToken(Token.TokenType.Identifier);
                     if (t == null) return;
                     args.Add(new Value(this, parser, t.content));
                 } else if (Value.CanParse(parser))
@@ -137,6 +143,7 @@ namespace OpenDayDialogue
             Token t = parser.EnsureToken(Token.TokenType.VariableIdentifier);
             if (t == null) return;
             variableName = t.content;
+            sceneLine = t.line + 1;
             if (parser.IsNextToken(Token.TokenType.Equals))
             {
                 if (parser.EnsureToken(Token.TokenType.Equals) == null) return;
@@ -239,7 +246,9 @@ namespace OpenDayDialogue
 
         public SceneIfStatement(Node parent, Parser parser) : base(parent, parser)
         {
-            if (parser.EnsureToken(Token.TokenType.Keyword, "if") == null) return;
+            Token t = parser.EnsureToken(Token.TokenType.Keyword, "if");
+            if (t == null) return;
+            sceneLine = t.line + 1;
             mainClause = new Clause(this);
             mainClause.expression = Expression.Parse(mainClause, parser);
             if (mainClause.expression == null) return;
@@ -313,14 +322,16 @@ namespace OpenDayDialogue
             if (parser.IsNextToken(Token.TokenType.Keyword))
             {
                 // Regular choice statement
-                if (parser.EnsureToken(Token.TokenType.Keyword, "choice") == null) return;
+                Token t = parser.EnsureToken(Token.TokenType.Keyword, "choice");
+                if (t == null) return;
+                sceneLine = t.line + 1;
                 if (parser.EnsureToken(Token.TokenType.Colon) == null) return;
 
                 choices = new List<Choice>();
                 if (parser.EnsureToken(Token.TokenType.Indent) == null) return;
                 while (parser.tokenStream.Count > 0 && !parser.IsNextToken(Token.TokenType.Dedent))
                 {
-                    Token t = parser.EnsureToken(Token.TokenType.String);
+                    t = parser.EnsureToken(Token.TokenType.String);
                     if (t == null) return;
                     Choice choice = new Choice()
                     {
@@ -351,10 +362,16 @@ namespace OpenDayDialogue
                 // Modified choice statement (no keyword and indent, etc.)
                 choices = new List<Choice>();
 
+                bool first = true;
                 while (parser.tokenStream.Count > 0 && parser.AreNextTokens(Token.TokenType.String, Token.TokenType.Colon))
                 {
                     Token t = parser.EnsureToken(Token.TokenType.String);
                     if (t == null) return;
+                    if (first)
+                    {
+                        sceneLine = t.line + 1;
+                        first = false;
+                    }
                     Choice choice = new Choice()
                     {
                         choiceText = t.content,
@@ -394,6 +411,7 @@ namespace OpenDayDialogue
             Token t = parser.EnsureToken(Token.TokenType.Identifier);
             if (t == null) return;
             name = t.content;
+            sceneLine = t.line + 1;
 
             if (parser.EnsureToken(Token.TokenType.Colon) == null) return;
             if (parser.EnsureToken(Token.TokenType.EndOfLine) == null) return;
@@ -416,6 +434,7 @@ namespace OpenDayDialogue
             Token t = parser.EnsureToken(Token.TokenType.Identifier);
             if (t == null) return;
             labelName = t.content;
+            sceneLine = t.line + 1;
 
             if (parser.EnsureToken(Token.TokenType.EndOfLine) == null) return;
         }
@@ -433,7 +452,9 @@ namespace OpenDayDialogue
 
         public SceneWhileLoop(Node parent, Parser parser) : base(parent, parser)
         {
-            if (parser.EnsureToken(Token.TokenType.Keyword, "while") == null) return;
+            Token t = parser.EnsureToken(Token.TokenType.Keyword, "while");
+            if (t == null) return;
+            sceneLine = t.line + 1;
             condition = Expression.Parse(this, parser);
             if (condition == null) return;
             if (parser.EnsureToken(Token.TokenType.Colon) == null) return;
@@ -463,6 +484,7 @@ namespace OpenDayDialogue
             Token t = parser.EnsureToken(Token.TokenType.Identifier);
             if (t == null) return;
             charName = t.content;
+            sceneLine = t.line + 1;
 
             if (parser.EnsureToken(Token.TokenType.Colon) == null) return;
 
@@ -488,6 +510,7 @@ namespace OpenDayDialogue
         {
             Token t = parser.EnsureToken(Token.TokenType.CompareOperator);
             if (t == null) return;
+            sceneLine = t.line + 1;
             string op = t.content;
             if (parser.IsNextToken(Token.TokenType.Identifier))
             {
@@ -525,6 +548,7 @@ namespace OpenDayDialogue
             Token t = parser.EnsureToken(Token.TokenType.Keyword);
             if (t == null) return;
             content = t.content;
+            sceneLine = t.line + 1;
         }
     }
 
@@ -574,11 +598,13 @@ namespace OpenDayDialogue
                 type = Type.SpecialName;
                 SceneSpecialName sn = new SceneSpecialName(this, parser);
                 text = new SceneText(this, parser, sn.dialogue);
+                text.sceneLine = sn.sceneLine;
                 command = new SceneCommand(this, parser, new List<Value>()
                 {
                     new Value(this, parser, "char"),
                     new Value(this, parser, sn.charName)
                 });
+                command.sceneLine = sn.sceneLine;
             } else if (SceneJump.CanParse(parser))
             {
                 type = Type.Jump;

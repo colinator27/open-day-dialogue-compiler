@@ -73,7 +73,7 @@ namespace OpenDayDialogue
             sb.AppendLine();
             foreach (CodeError e in errors)
             {
-                sb.AppendFormat("File \"{1}\", line {2}, in {3}: {4} {5}({0})", 
+                sb.AppendFormat("{0}: File \"{1}\", line {2}, in {3}: {4} {5}", 
                         (e.severity == CodeError.Severity.Error || e.severity == CodeError.Severity.ErrorDeadly) ? "Error" : "Warn",
                         e.file,
                         e.line,

@@ -10,6 +10,8 @@ Options:
   -s, --source=file          The input source file name/path.
   -e, --export=file          The export binary file name/path. Used in
                                conjunction with '--source' option.
+  -d, --debug                Will emit debug instructions when compiling,
+                               useful for debugging with an interpreter.
       --make-translations    Generate translation files as compiling happens.
                                Outputs to the same directory as source files,
                                with extension '.opdat'.

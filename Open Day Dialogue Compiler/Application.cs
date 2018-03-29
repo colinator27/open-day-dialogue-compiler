@@ -24,6 +24,7 @@ namespace OpenDayDialogue
         public static Dictionary<string/*filename*/, Tuple<string/*file hash*/, Dictionary<string/*symbol name*/, List<string>/*strings*/>>> genTranslations;
         public static Dictionary<string/*filename*/, Tuple<string/*file hash*/, Dictionary<string/*symbol name*/, Queue<string>/*strings*/>>> queuedTranslations;
         public static bool errorsLogItems = false;
+        public static bool emitDebugInstructions = false;
 
         protected static void Main(string[] args)
         {
@@ -36,6 +37,7 @@ namespace OpenDayDialogue
             {
                 { "s|source=", "The input source {file} name/path.", x => sourceFileName = x },
                 { "e|export=", "The export binary {file} name/path. Used in conjunction with '--source' option.", x => exportFileName = x },
+                { "d|debug", "Will emit debug instructions when compiling, useful for debugging with an interpreter.", x => emitDebugInstructions = (x != null) },
                 { "make-translations", "Generate translation files as compiling happens. Outputs to the same directory as source files, with extension '.opdat'.", x => generateTranslations = (x != null) },
                 { "exclude-values", "Exclude values/commands when generating translations (has no effect when applying the translation files).", x => excludeValues = (x != null) },
                 { "apply-translations", "Will apply translation files if they are found with the source code files. They must be the source file's name followed by '.opdat'.", x => applyTranslations = (x != null) },

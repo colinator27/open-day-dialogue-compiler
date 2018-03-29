@@ -18,12 +18,21 @@ namespace OpenDayDialogue
         public List<Instruction> instructions = new List<Instruction>();
 
         private uint labelCounter = 0;
+        /// <summary>
+        /// Generates a new label ID.
+        /// </summary>
+        /// <returns>The next label ID</returns>
         public uint GetNextLabel()
         {
             return labelCounter++;
         }
 
         private uint stringCounter = 0;
+        /// <summary>
+        /// Registers a new string in the program, or finds a duplicate.
+        /// </summary>
+        /// <param name="s">The string content</param>
+        /// <returns>The string ID</returns>
         public uint RegisterString(string s)
         {
             if (stringEntries.ContainsKey(s))
@@ -37,6 +46,12 @@ namespace OpenDayDialogue
         }
 
         private uint valueCounter = 0;
+        /// <summary>
+        /// Registers a value to the program, or finds a duplicate.
+        /// </summary>
+        /// <param name="v">The value to register</param>
+        /// <param name="c">The compiler</param>
+        /// <returns>The value ID</returns>
         public uint RegisterValue(Value v, Compiler c)
         {
             uint id = valueCounter++;
@@ -79,6 +94,11 @@ namespace OpenDayDialogue
         }
 
         private uint commandCounter = 0;
+        /// <summary>
+        /// Registers a new command call to the program, or finds a duplicate.
+        /// </summary>
+        /// <param name="c">The command call</param>
+        /// <returns>The command call ID</returns>
         public uint RegisterCommand(CommandCall c)
         {
             uint id = commandCounter++;
@@ -88,6 +108,9 @@ namespace OpenDayDialogue
             return id;
         }
 
+        /// <summary>
+        /// Randomly shuffles the strings in the string table, to make it less decipherable.
+        /// </summary>
         public void ShuffleStrings()
         {
             Random r = new Random();
@@ -180,7 +203,10 @@ namespace OpenDayDialogue
 
             // wait for user input, goes to one of the choices, and if no conditions match/there are none, go to
             // the end specified in operand1
-            ChoiceSelection = 0xBB
+            ChoiceSelection = 0xBB,
+
+            // set the debug line for interpreter, not always emitted (based on flag)
+            DebugLine = 0xD0 // operand1: line number
         }
 
         public Opcode opcode;
@@ -218,7 +244,12 @@ namespace OpenDayDialogue
         public Program program;
         private Stack<string> currentNamespace;
         private Stack<Tuple<SceneWhileLoop, uint/*begin label*/, uint/*end label*/>> whileLoops;
+        private List<string> sceneDefinedLabels;
+        private List<string> sceneReferencedLabels;
 
+        /// <summary>
+        /// Reports an error to the error list.
+        /// </summary>
         public void Error(string message)
         {
             Errors.Report(message, "?", CodeError.Severity.ErrorDeadly, "Compiler", GetCurrentNamespace());
@@ -229,13 +260,24 @@ namespace OpenDayDialogue
             program = new Program();
             currentNamespace = new Stack<string>();
             whileLoops = new Stack<Tuple<SceneWhileLoop, uint, uint>>();
+            sceneDefinedLabels = new List<string>();
+            sceneReferencedLabels = new List<string>();
         }
 
+        /// <summary>
+        /// Gets the current namespace, down to the current scene or definition group if it exists.
+        /// </summary>
+        /// <returns>String of the namespace</returns>
         public string GetCurrentNamespace()
         {
             return string.Join(".", currentNamespace.Reverse());
         }
 
+        /// <summary>
+        /// Gets a full symbol name (with namespace) for an item, such as a definition key symbol.
+        /// </summary>
+        /// <param name="name">The item</param>
+        /// <returns>String of the full item name</returns>
         public string GetFullSymbolName(string name)
         {
             string n = GetCurrentNamespace();
@@ -244,11 +286,58 @@ namespace OpenDayDialogue
 
         public void GenerateCode(Block block)
         {
+            if (block.parent == null)
+                GenerateCustomLabels(block);
 
             // Generate code for each statement
             foreach (Statement s in block.statements)
             {
                 GenerateCode(s);
+            }
+        }
+
+        public void GenerateCustomLabels(Block block)
+        {
+            foreach (Statement s in block.statements)
+            {
+                switch (s.type)
+                {
+                    case Statement.Type.Block:
+                        GenerateCustomLabels(s.block);
+                        break;
+                    case Statement.Type.Namespace:
+                        GenerateCustomLabels(s.@namespace.block);
+                        break;
+                    case Statement.Type.Scene:
+                        s.scene.statements.ForEach(sc => GenerateCustomLabels(sc));
+                        break;
+                }
+            }
+        }
+
+        public void GenerateCustomLabels(SceneStatement s)
+        {
+            switch (s.type)
+            {
+                case SceneStatement.Type.ChoiceStatement:
+                    foreach (Choice c in s.choiceStatement.choices)
+                    {
+                        c.statements.ForEach(sc => GenerateCustomLabels(sc));
+                    }
+                    break;
+                case SceneStatement.Type.IfStatement:
+                    s.ifStatement.mainClause.statements.ForEach(sc => GenerateCustomLabels(sc));
+                    foreach (Clause c in s.ifStatement.elseClauses)
+                    {
+                        c.statements.ForEach(sc => GenerateCustomLabels(sc));
+                    }
+                    break;
+                case SceneStatement.Type.WhileLoop:
+                    s.whileLoop.statements.ForEach(sc => GenerateCustomLabels(sc));
+                    break;
+                case SceneStatement.Type.Label:
+                    program.customLabels[s.label.name] = program.GetNextLabel();
+                    break;
             }
         }
 
@@ -314,6 +403,8 @@ namespace OpenDayDialogue
                     break;
                 case Statement.Type.Scene:
                     currentNamespace.Push(s.scene.name);
+                    sceneDefinedLabels.Clear();
+                    sceneReferencedLabels.Clear();
                     if (Application.generateTranslations)
                     {
                         Application.genTranslations[Application.currentFile].Item2["s:" + GetCurrentNamespace()] = new List<string>();
@@ -331,6 +422,16 @@ namespace OpenDayDialogue
                             }
                         }
                     }
+                    foreach (string l in sceneReferencedLabels)
+                    {
+                        string match = sceneDefinedLabels.Find(x => (x == l));
+                        if (match == null)
+                        {
+                            Errors.Report("Found a jump statement that jumps to a label from another scene.", "?", CodeError.Severity.Warning, "Compiler", GetCurrentNamespace());
+                        }
+                    }
+                    sceneReferencedLabels.Clear();
+                    sceneDefinedLabels.Clear();
                     currentNamespace.Pop();
                     break;
             }
@@ -349,15 +450,6 @@ namespace OpenDayDialogue
             program.scenes[program.RegisterString(GetCurrentNamespace())] = labelID;
             Emit(Instruction.Opcode.Label, labelID);
 
-            // Generate custom labels
-            foreach (SceneStatement s in scene.statements)
-            {
-                if (s.type == SceneStatement.Type.Label)
-                {
-                    program.customLabels[s.label.name] = program.GetNextLabel();
-                }
-            }
-
             // Generate code for the scene statements
             foreach (SceneStatement s in scene.statements)
             {
@@ -373,6 +465,7 @@ namespace OpenDayDialogue
             switch (statement.type)
             {
                 case SceneStatement.Type.Text:
+                    // Translations
                     if (Application.generateTranslations)
                     {
                         Application.genTranslations[Application.currentFile].Item2["s:" + GetCurrentNamespace()].Add(statement.text.text); 
@@ -390,6 +483,12 @@ namespace OpenDayDialogue
                             statement.text.text = q.Dequeue();
                         }
                     }
+
+                    // Debug instruction
+                    if (statement.text.sceneLine != null)
+                        DebugEmitLine((int)statement.text.sceneLine);
+
+                    // Emit the instruction
                     Emit(Instruction.Opcode.TextRun, program.RegisterString(statement.text.text));
                     break;
                 case SceneStatement.Type.Command:
@@ -404,11 +503,19 @@ namespace OpenDayDialogue
                         nameStringID = program.RegisterString(statement.command.args[0].valueRawIdentifier),
                         argValueIDs = valueIDs.ToArray()
                     });
-                    
+
+                    // Debug instruction
+                    if (statement.command.sceneLine != null)
+                        DebugEmitLine((int)statement.command.sceneLine);
+
                     // Emit the instruction
                     Emit(Instruction.Opcode.CommandRun, commandID);
                     break;
                 case SceneStatement.Type.VariableAssign:
+                    // Debug instruction
+                    if (statement.variableAssign.sceneLine != null)
+                        DebugEmitLine((int)statement.variableAssign.sceneLine);
+
                     // Compile the expression
                     GenerateCode(statement.variableAssign.value);
 
@@ -429,6 +536,10 @@ namespace OpenDayDialogue
                             clauses.Add(new KeyValuePair<Clause, uint>(statement.ifStatement.elseClauses[i - 1], program.GetNextLabel()));
                         }
                     }
+
+                    // Debug instruction
+                    if (statement.ifStatement.sceneLine != null)
+                        DebugEmitLine((int)statement.ifStatement.sceneLine);
 
                     // Generate instructions for each clause, including the main one
                     for (int i = 0; i < clauses.Count; i++)
@@ -460,6 +571,10 @@ namespace OpenDayDialogue
                     }
                     break;
                 case SceneStatement.Type.ChoiceStatement:
+                    // Debug instruction
+                    if (statement.choiceStatement.sceneLine != null)
+                        DebugEmitLine((int)statement.choiceStatement.sceneLine);
+
                     Emit(Instruction.Opcode.BeginChoice);
                     uint endChoiceLabel = program.GetNextLabel();
 
@@ -554,22 +669,38 @@ namespace OpenDayDialogue
                     });
                     break;
                 case SceneStatement.Type.Label:
+                    // Debug instruction
+                    if (statement.label.sceneLine != null)
+                        DebugEmitLine((int)statement.label.sceneLine);
+
                     if (!program.customLabels.ContainsKey(statement.label.name))
                     {
                         Error(string.Format("Somehow, the compiler failed to register a label ID for label \"{0}\". This shouldn't happen.", statement.label.name));
                         return;
                     }
                     Emit(Instruction.Opcode.Label, program.customLabels[statement.label.name]);
+
+                    sceneDefinedLabels.Add(statement.label.name);
                     break;
                 case SceneStatement.Type.Jump:
+                    // Debug instruction
+                    if (statement.jump.sceneLine != null)
+                        DebugEmitLine((int)statement.jump.sceneLine);
+
                     if (!program.customLabels.ContainsKey(statement.jump.labelName))
                     {
                         Error(string.Format("Failed to find label with name \"{0}\". Invalid jump statement.", statement.jump.labelName));
                         return;
                     }
                     Emit(Instruction.Opcode.Jump, program.customLabels[statement.jump.labelName]);
+
+                    sceneReferencedLabels.Add(statement.jump.labelName);
                     break;
                 case SceneStatement.Type.WhileLoop:
+                    // Debug instruction
+                    if (statement.whileLoop.sceneLine != null)
+                        DebugEmitLine((int)statement.whileLoop.sceneLine);
+
                     // Get labels pre-generated
                     uint beginConditionLabel = program.GetNextLabel();
                     uint endLoopLabel = program.GetNextLabel();
@@ -598,6 +729,10 @@ namespace OpenDayDialogue
 
                     break;
                 case SceneStatement.Type.ControlFlow:
+                    // Debug instruction
+                    if (statement.controlFlow.sceneLine != null)
+                        DebugEmitLine((int)statement.controlFlow.sceneLine);
+
                     switch (statement.controlFlow.content)
                     {
                         case "continue":
@@ -828,6 +963,12 @@ namespace OpenDayDialogue
             return build;
         }
 
+        /// <summary>
+        /// Emits an instruction to the instruction list.
+        /// </summary>
+        /// <param name="op">The opcode</param>
+        /// <param name="operand1">The first operand, if necessary</param>
+        /// <param name="operand2">The second operand, if necessary</param>
         void Emit(Instruction.Opcode op, uint? operand1 = null, uint? operand2 = null)
         {
             Instruction i = new Instruction()
@@ -838,6 +979,16 @@ namespace OpenDayDialogue
             };
 
             program.instructions.Add(i);
+        }
+
+        /// <summary>
+        /// If enabled, will emit a debug instruction indicating the line in the source code that the code is running at.
+        /// </summary>
+        /// <param name="line">The line number</param>
+        void DebugEmitLine(int line)
+        {
+            if (Application.emitDebugInstructions)
+                Emit(Instruction.Opcode.DebugLine, (uint)line);
         }
     }
 }
