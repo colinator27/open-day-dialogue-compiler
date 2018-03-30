@@ -20,6 +20,9 @@ namespace OpenDayDialogue
             {
                 bw.Write(new char[] { 'O', 'P', 'D', 'A' });
 
+                // New as of version >= 3, for compatibility with interpreters
+                bw.Write(Application.Version);
+
                 // String entries
                 bw.Write(program.stringEntries.Count);
                 foreach (KeyValuePair<string, uint> entry in program.stringEntries)

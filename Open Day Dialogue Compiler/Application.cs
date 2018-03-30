@@ -13,17 +13,59 @@ namespace OpenDayDialogue
 {
     class Application
     {
+        /// <summary>
+        /// The version of the binary file that gets exported.
+        /// </summary>
+        public const uint Version = 3;
+
         public static string programLanguage = "unknown";
+
+        /// <summary>
+        /// The remaining files to compile
+        /// </summary>
         public static Queue<string> files = new Queue<string>();
+
+        /// <summary>
+        /// The list of all files that have been or will be compiled.
+        /// </summary>
         public static List<string> allFiles = new List<string>();
+
+        /// <summary>
+        /// The current file being compiled.
+        /// </summary>
         public static string currentFile = "";
+
+        /// <summary>
+        /// Whether or not to generate translation files
+        /// </summary>
         public static bool generateTranslations = false;
+
+        /// <summary>
+        /// Whether or not to include/exclude Values in the code for translations
+        /// </summary>
         public static bool excludeValues = false;
+
+        /// <summary>
+        /// Whether or not to apply a translation file.
+        /// </summary>
         public static bool applyTranslations = false;
+
+        /// <summary>
+        /// Whether or not to ignore the hash of the file when applying translations
+        /// </summary>
         public static bool translationIgnoreHash = false;
+
         public static Dictionary<string/*filename*/, Tuple<string/*file hash*/, Dictionary<string/*symbol name*/, List<string>/*strings*/>>> genTranslations;
         public static Dictionary<string/*filename*/, Tuple<string/*file hash*/, Dictionary<string/*symbol name*/, Queue<string>/*strings*/>>> queuedTranslations;
+
+        /// <summary>
+        /// Whether or not to log item names when an error is logged.
+        /// </summary>
         public static bool errorsLogItems = false;
+
+        /// <summary>
+        /// Whether or not to emit debugging instructions when compiling.
+        /// </summary>
         public static bool emitDebugInstructions = false;
 
         protected static void Main(string[] args)
