@@ -180,7 +180,7 @@ namespace OpenDayDialogue
         {
             if (s.Length == 0)
                 return false;
-            if (s[0] != '@' && !Char.IsLetter(s[0]))
+            if (s[0] != '@' && s[0] != '_' && !Char.IsLetter(s[0]))
                 return false;
             bool at = false;
             foreach (char c in s)
