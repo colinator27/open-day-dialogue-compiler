@@ -12,7 +12,7 @@ namespace OpenDayDialogue
         public Dictionary<string/* string content */, uint/* id */> stringEntries = new Dictionary<string, uint>();
         public Dictionary<uint/* id */, CommandCall> commandTable = new Dictionary<uint, CommandCall>();
         public Dictionary<uint/* scene name id */, uint/* label id */> scenes = new Dictionary<uint, uint>();
-        public Dictionary<uint/* key string id */, uint/* value string id */> definitions = new Dictionary<uint, uint>();
+        public Dictionary<uint/* key string id */, uint/* value id */> definitions = new Dictionary<uint, uint>();
         public Dictionary<uint/* value id */, Value> values = new Dictionary<uint, Value>();
         public Dictionary<string/* custom label name */, uint/* label id */> customLabels = new Dictionary<string, uint>();
         public List<Instruction> instructions = new List<Instruction>();
@@ -65,13 +65,13 @@ namespace OpenDayDialogue
                 {
                     if (Application.generateTranslations)
                     {
-                        Application.genTranslations[Application.currentFile].Item2["s:" + c.GetCurrentNamespace()].Add(v.valueString);
+                        Application.genTranslations[Application.currentFile].Item2[(c.isInScene ? "s:" : "d:") + c.GetCurrentNamespace()].Add(v.valueString);
                     }
                     else if (Application.applyTranslations)
                     {
-                        if (Application.queuedTranslations[Application.currentFile].Item2.ContainsKey("s:" + c.GetCurrentNamespace()))
+                        if (Application.queuedTranslations[Application.currentFile].Item2.ContainsKey((c.isInScene ? "s:" : "d:") + c.GetCurrentNamespace()))
                         {
-                            Queue<string> q = Application.queuedTranslations[Application.currentFile].Item2["s:" + c.GetCurrentNamespace()];
+                            Queue<string> q = Application.queuedTranslations[Application.currentFile].Item2[(c.isInScene ? "s:" : "d:") + c.GetCurrentNamespace()];
                             if (q.Count == 0)
                             {
                                 c.Error("Translation file string count does not match with the actual code!");
@@ -185,6 +185,10 @@ namespace OpenDayDialogue
             CommandRun = 0xB3, // operand1: command id from command table
             SetVariable = 0xB4, // operand1: variable name id. Uses top value on stack
             CallFunction = 0xB5, // operand1: function name id. Used for non-builitin functions
+            MakeArray = 0xBC, // operand1: count of initial indices. Initializes array to a Value and pushes
+            SetArrayIndex = 0xBD, // First the array is pushed, then the index is pushed, then the value (3 items prepared on stack for this function). Index will be popped off as well.
+            PushArrayIndex = 0xBE, // Pushes the value of an index in array, using the values on the stack for array and index. On the top of stack should be index. The instruction pops off the original Value/array as well.
+            PushVariable = 0xBF, // operand1: variable name id. Pushes a variable's Value to the stack.
 
             // jump if top val of stack is true, pop it off
             JumpTrue = 0xB6, // operand1: label id
@@ -246,6 +250,7 @@ namespace OpenDayDialogue
         private Stack<Tuple<SceneWhileLoop, uint/*begin label*/, uint/*end label*/>> whileLoops;
         private List<string> sceneDefinedLabels;
         private List<string> sceneReferencedLabels;
+        public bool isInScene;
 
         /// <summary>
         /// Reports an error to the error list.
@@ -262,6 +267,7 @@ namespace OpenDayDialogue
             whileLoops = new Stack<Tuple<SceneWhileLoop, uint, uint>>();
             sceneDefinedLabels = new List<string>();
             sceneReferencedLabels = new List<string>();
+            isInScene = false;
         }
 
         /// <summary>
@@ -362,10 +368,7 @@ namespace OpenDayDialogue
                             Error(string.Format("Found duplicate definitions for {0}", GetFullSymbolName(def.key)));
                             return;
                         }
-                        if (Application.generateTranslations)
-                        {
-                            Application.genTranslations[Application.currentFile].Item2["d:" + GetCurrentNamespace()].Add(def.value); 
-                        } else if (Application.applyTranslations)
+                        if (Application.applyTranslations)
                         {
                             if (Application.queuedTranslations[Application.currentFile].Item2.ContainsKey("d:" + GetCurrentNamespace()))
                             {
@@ -376,10 +379,10 @@ namespace OpenDayDialogue
                                                                       "d:" + GetCurrentNamespace()));
                                     return;
                                 }
-                                def.value = q.Dequeue();
+                                def.value = new Value(q.Dequeue());
                             }
                         }
-                        uint valueID = program.RegisterString(def.value);
+                        uint valueID = program.RegisterValue(def.value, this);
                         program.definitions[keyID] = valueID;
                     }
                     if (Application.applyTranslations)
@@ -405,6 +408,7 @@ namespace OpenDayDialogue
                     currentNamespace.Push(s.scene.name);
                     sceneDefinedLabels.Clear();
                     sceneReferencedLabels.Clear();
+                    isInScene = true;
                     if (Application.generateTranslations)
                     {
                         Application.genTranslations[Application.currentFile].Item2["s:" + GetCurrentNamespace()] = new List<string>();
@@ -433,6 +437,7 @@ namespace OpenDayDialogue
                     sceneReferencedLabels.Clear();
                     sceneDefinedLabels.Clear();
                     currentNamespace.Pop();
+                    isInScene = false;
                     break;
             }
         }
@@ -516,8 +521,21 @@ namespace OpenDayDialogue
                     if (statement.variableAssign.sceneLine != null)
                         DebugEmitLine((int)statement.variableAssign.sceneLine);
 
+                    // For setting array values, prepare the array
+                    if (statement.variableAssign.arrayIndex != null)
+                    {
+                        Emit(Instruction.Opcode.PushVariable, program.RegisterString(statement.variableAssign.variableName));
+                        GenerateCode(statement.variableAssign.arrayIndex);
+                    }
+
                     // Compile the expression
                     GenerateCode(statement.variableAssign.value);
+
+                    // For setting array values, update the array
+                    if (statement.variableAssign.arrayIndex != null)
+                    {
+                        Emit(Instruction.Opcode.SetArrayIndex);
+                    }
 
                     // Set the variable
                     Emit(Instruction.Opcode.SetVariable, program.RegisterString(statement.variableAssign.variableName));
@@ -753,8 +771,31 @@ namespace OpenDayDialogue
         {
             if (e.value != null)
             {
-                // Standard value
-                Emit(Instruction.Opcode.Push, program.RegisterValue(e.value, this));
+                if (e.value.type == Value.Type.Variable)
+                {
+                    // Variable value
+                    Emit(Instruction.Opcode.PushVariable, program.RegisterString(e.value.valueVariable));
+                    if (e.arrayIndex != null)
+                    {
+                        GenerateCode(e.arrayIndex);
+                        Emit(Instruction.Opcode.PushArrayIndex);
+                    }
+                } else
+                {
+                    // Standard value
+                    Emit(Instruction.Opcode.Push, program.RegisterValue(e.value, this));
+                }
+            } else if (e.arrayValues != null)
+            {
+                Emit(Instruction.Opcode.MakeArray, (uint)e.arrayValues.Count);
+                int i = 0;
+                foreach (Expression expr in e.arrayValues)
+                {
+                    Emit(Instruction.Opcode.Push, program.RegisterValue(new Value(null, null, i), this));
+                    GenerateCode(expr);
+                    Emit(Instruction.Opcode.SetArrayIndex);
+                    i++;
+                }
             } else
             {
                 if (e.func.parameters.Count == 1 && e.func.function.name == "-")

@@ -28,7 +28,9 @@ namespace OpenDayDialogue
             Comma,
             UnaryMinus,
             UnaryInvert,
-            SpecialAssignmentOperator
+            SpecialAssignmentOperator,
+            OpenBrack,
+            CloseBrack
         }
 
         public TokenType type;
@@ -121,7 +123,7 @@ namespace OpenDayDialogue
         /// <returns>True or false.</returns>
         private static bool IsDelimeter(char c)
         {
-            return Char.IsWhiteSpace(c) || c == ':' || c == '=' || c == '+' || c == '-' || c == '*' || c == '/' || c == '%' || c == '^' || c == '>' || c == '<' || c == '(' || c == ')' || c == '!' || c == '"';
+            return Char.IsWhiteSpace(c) || c == ':' || c == '=' || c == '+' || c == '-' || c == '*' || c == '/' || c == '%' || c == '^' || c == '>' || c == '<' || c == '(' || c == ')' || c == '!' || c == '"' || c == '[' || c == ']' || c == ',';
         }
 
         /// <summary>
@@ -333,6 +335,28 @@ namespace OpenDayDialogue
                         tokens.Add(new Token()
                         {
                             type = Token.TokenType.Comma,
+                            line = line
+                        });
+                    }
+
+                    // Open bracket
+                    if (txt.CheckChars1(ref pos, '['))
+                    {
+                        pos++;
+                        tokens.Add(new Token()
+                        {
+                            type = Token.TokenType.OpenBrack,
+                            line = line
+                        });
+                    }
+
+                    // Close bracket
+                    if (txt.CheckChars1(ref pos, ']'))
+                    {
+                        pos++;
+                        tokens.Add(new Token()
+                        {
+                            type = Token.TokenType.CloseBrack,
                             line = line
                         });
                     }

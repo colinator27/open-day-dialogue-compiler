@@ -132,6 +132,7 @@ namespace OpenDayDialogue
     {
         public string variableName;
         public Expression value;
+        public Expression arrayIndex;
 
         public static bool CanParse(Parser parser)
         {
@@ -144,6 +145,15 @@ namespace OpenDayDialogue
             if (t == null) return;
             variableName = t.content;
             sceneLine = t.line + 1;
+
+            if (parser.IsNextToken(Token.TokenType.OpenBrack))
+            {
+                if (parser.EnsureToken(Token.TokenType.OpenBrack) == null) return;
+                arrayIndex = Expression.Parse(this, parser);
+                if (arrayIndex == null) return;
+                if (parser.EnsureToken(Token.TokenType.CloseBrack) == null) return;
+            }
+
             if (parser.IsNextToken(Token.TokenType.Equals))
             {
                 if (parser.EnsureToken(Token.TokenType.Equals) == null) return;
@@ -204,19 +214,39 @@ namespace OpenDayDialogue
                         break;
                 }
 
-                value = new Expression(this, new FunctionCall()
+                if (arrayIndex == null)
                 {
-                    function = BuiltinFunctions.Get(builtinFunc),
-                    parameters = new List<Expression>()
+                    value = new Expression(this, new FunctionCall()
                     {
-                        new Expression(this, new Value(this, parser, new Token()
+                            function = BuiltinFunctions.Get(builtinFunc),
+                            parameters = new List<Expression>()
                         {
-                            type = Token.TokenType.VariableIdentifier,
-                            content = variableName
-                        }), parser),
-                        other
-                    }
-                }, parser);
+                            new Expression(this, new Value(this, parser, new Token()
+                            {
+                                type = Token.TokenType.VariableIdentifier,
+                                content = variableName
+                            }), parser),
+                            other
+                        }
+                    }, parser);
+                } else
+                {
+                    Expression e = new Expression(this, new Value(this, parser, new Token()
+                    {
+                        type = Token.TokenType.VariableIdentifier,
+                        content = variableName
+                    }), parser);
+                    e.arrayIndex = arrayIndex;
+                    value = new Expression(this, new FunctionCall()
+                    {
+                        function = BuiltinFunctions.Get(builtinFunc),
+                        parameters = new List<Expression>()
+                        {
+                            e,
+                            other
+                        }
+                    }, parser);
+                }
 
                 if (parser.EnsureToken(Token.TokenType.EndOfLine) == null) return;
             }
@@ -656,7 +686,7 @@ namespace OpenDayDialogue
     class TextDefinition : Node
     {
         public string key;
-        public string value;
+        public Value value;
 
         public static bool CanParse(Parser parser)
         {
@@ -671,9 +701,7 @@ namespace OpenDayDialogue
 
             if (parser.EnsureToken(Token.TokenType.Equals) == null) return;
 
-            t = parser.EnsureToken(Token.TokenType.String);
-            if (t == null) return;
-            value = t.content;
+            value = new Value(parent, parser);
         }
     }
 
@@ -804,10 +832,35 @@ namespace OpenDayDialogue
         public List<Expression> parameters;
     }
 
+    // Expression -> ( Expression )
+
+    // Expression -> And
+    // Expression -> Or
+    // And -> Expression && Expression
+    // Or -> Expression || Expression
+
+    // Expression -> CompareOperation
+    // CompareOperation -> Expression CompareOperator Expression
+
+    // Expression -> BinaryOperation
+    // BinaryOperation -> Expression BinOp Expression
+
+    // Expression -> UnaryOperation
+    // UnaryOperation -> UnaryOp Expression
+
+    // Expression -> VariableIdentifier [ Expression ]
+    
+    // Expression -> [ Expression , ... ]
+    
+    // Expression -> AllLiterals
+
+
     class Expression : Node
     {
         public Value value;
+        public Expression arrayIndex;
         public FunctionCall func;
+        public List<Expression> arrayValues;
 
         public Expression(Node parent, Value value, Parser parser) : base(parent, parser)
         {
@@ -817,6 +870,11 @@ namespace OpenDayDialogue
         public Expression(Node parent, FunctionCall func, Parser parser) : base(parent, parser)
         {
             this.func = func;
+        }
+
+        public Expression(Node parent, List<Expression> arrayValues, Parser parser) : base(parent, parser)
+        {
+            this.arrayValues = arrayValues;
         }
 
         public Expression(Node parent) : base(parent, null)
@@ -829,295 +887,223 @@ namespace OpenDayDialogue
         /// </summary>
         public static Expression Parse(Node parent, Parser parser)
         {
-            // Put the tokens into reverse polish notation using the shunting-yard algorithm
-            // This part is heavily inspired by YarnSpinner
-            Queue<Token> expressionRPN = new Queue<Token>();
-            Stack<Token> operatorStack = new Stack<Token>();
-            Stack<Token> functionStack = new Stack<Token>();
-
-            Token.TokenType[] accepted =
+            return UnaryOperation(parent, parser);
+        }
+        
+        private static Expression UnaryOperation(Node parent, Parser p)
+        {
+            if ((p.IsNextTokenDontRemoveEOL(Token.TokenType.BinaryOperator) && p.IsNextToken("-")) || 
+                (p.IsNextTokenDontRemoveEOL(Token.TokenType.CompareOperator) && p.IsNextToken("!")))
             {
-                Token.TokenType.Number,
-                Token.TokenType.VariableIdentifier,
-                Token.TokenType.String,
-                Token.TokenType.Identifier,
-                Token.TokenType.OpenParen,
-                Token.TokenType.CloseParen,
-                Token.TokenType.Comma,
-                Token.TokenType.True,
-                Token.TokenType.False,
-                Token.TokenType.Undefined,
-                Token.TokenType.BinaryOperator,
-                Token.TokenType.CompareOperator
-            };
+                Token t = p.tokenStream.Dequeue();
+                if (t.content == "-")
+                    t.type = Token.TokenType.UnaryMinus;
+                else
+                    t.type = Token.TokenType.UnaryInvert;
 
-            Token last = null;
-            while (parser.tokenStream.Count > 0 && parser.IsNextTokenDontRemoveEOL(accepted))
-            {
-                Token next = parser.EnsureToken(accepted);
-                if (next == null) return null;
-                switch (next.type)
+                Expression e = new Expression(parent);
+                Expression right = Parse(e, p);
+                if (right == null) return null;
+                e.func = new FunctionCall()
                 {
-                    case Token.TokenType.Number:
-                    case Token.TokenType.VariableIdentifier:
-                    case Token.TokenType.String:
-                    case Token.TokenType.True:
-                    case Token.TokenType.False:
-                    case Token.TokenType.Undefined:
-                        expressionRPN.Enqueue(next);
-                        break;
-                    case Token.TokenType.Identifier:
-                        operatorStack.Push(next);
-                        functionStack.Push(next);
-                        next = parser.EnsureToken(Token.TokenType.OpenParen);
-                        operatorStack.Push(next);
-                        break;
-                    case Token.TokenType.Comma:
-                        try {
-                            while (operatorStack.Peek().type != Token.TokenType.OpenParen)
-                            {
-                                expressionRPN.Enqueue(operatorStack.Pop());
-                            }
-                        } catch (InvalidOperationException)
-                        {
-                            Parser.ParserError.ReportSync(parser, "Unclosed parentheses in expression.", next.line);
-                            return null;
-                        }
-                        if (operatorStack.Peek().type != Token.TokenType.OpenParen)
-                        {
-                            Parser.ParserError.ReportSync(parser, "Unknown error parsing function.", operatorStack.Peek().line + 1);
-                            return null;
-                        }
-                        if (parser.IsNextToken(Token.TokenType.CloseParen, Token.TokenType.Comma))
-                        {
-                            Parser.ParserError.ReportSync(parser, "Expected expression.", parser.tokenStream.Peek().line + 1);
-                            return null;
-                        }
-                        functionStack.Peek().paramCount++;
-                        break;
-                    case Token.TokenType.OpenParen:
-                        operatorStack.Push(next);
-                        break;
-                    case Token.TokenType.CloseParen:
-                        try
-                        {
-                            while (operatorStack.Peek().type != Token.TokenType.OpenParen)
-                            {
-                                expressionRPN.Enqueue(operatorStack.Pop());
-                            }
-                            operatorStack.Pop();
-                        }
-                        catch (InvalidOperationException)
-                        {
-                            Parser.ParserError.ReportSync(parser, "Unclosed parentheses in expression.", next.line);
-                            return null;
-                        }
+                    function = (t.content == "!" ? BuiltinFunctions.Get(t.content) : new Function("-", 1)),
+                    parameters = new List<Expression>() { right }
+                };
 
-                        if (operatorStack.Count < 1)
-                        {
-                            Parser.ParserError.ReportSync(parser, "Error parsing expression.", next.line + 1);
-                            return null;
-                        }
-                        if (operatorStack.Peek().type == Token.TokenType.Identifier)
-                        {
-                            if (last.type != Token.TokenType.OpenParen)
-                            {
-                                functionStack.Peek().paramCount++;
-                            }
-                            expressionRPN.Enqueue(operatorStack.Pop());
-                            functionStack.Pop();
-                        }
-                        break;
-                    default:
-                        if (next.type == Token.TokenType.CompareOperator || next.type == Token.TokenType.BinaryOperator || next.type == Token.TokenType.UnaryMinus || next.type == Token.TokenType.UnaryInvert)
-                        {
-                            if (next.content == "-")
-                            {
-                                if (last == null || last.type == Token.TokenType.OpenParen || (last.type == Token.TokenType.CompareOperator || last.type == Token.TokenType.BinaryOperator || last.type == Token.TokenType.UnaryMinus))
-                                {
-                                    next.type = Token.TokenType.UnaryMinus;
-                                }
-                            } else if (next.content == "!")
-                            {
-                                if (last == null || last.type == Token.TokenType.OpenParen || (last.type == Token.TokenType.CompareOperator || last.type == Token.TokenType.BinaryOperator || last.type == Token.TokenType.UnaryMinus))
-                                {
-                                    next.type = Token.TokenType.UnaryInvert;
-                                }
-                            }
-
-                            while (PrecedenceApplies(next, operatorStack))
-                            {
-                                expressionRPN.Enqueue(operatorStack.Pop());
-                            }
-                            operatorStack.Push(next);
-                        }
-                        break;
-                }
-                last = next;
+                return e;
             }
 
-            while (operatorStack.Count > 0)
-                expressionRPN.Enqueue(operatorStack.Pop());
+            return Array(parent, p);
+        }
 
-            if (expressionRPN.Count == 0)
+        private static Expression Array(Node parent, Parser p)
+        {
+            if (p.IsNextTokenDontRemoveEOL(Token.TokenType.OpenBrack))
             {
-                Parser.ParserError.ReportSync(parser, "Expected expression, but none found.", parser.tokenStream.Peek().line + 1);
-                return null;
-            }
-
-            // Build the tree
-            Token first = expressionRPN.Peek();
-            Stack<Expression> evaluationStack = new Stack<Expression>();
-            while (expressionRPN.Count > 0)
-            {
-                Token next = expressionRPN.Dequeue();
-                if (next.type == Token.TokenType.BinaryOperator || next.type == Token.TokenType.CompareOperator || next.type == Token.TokenType.UnaryMinus || next.type == Token.TokenType.UnaryInvert)
+                if (p.EnsureToken(Token.TokenType.OpenBrack) == null) return null;
+                Expression e = new Expression(parent, new List<Expression>(), p);
+                bool first = true;
+                while (!p.IsNextTokenDontRemoveEOL(Token.TokenType.CloseBrack))
                 {
-                    Operator.OperatorInfo info = Operator.GetTokenOperator(next);
-                    if (info == null) return null;
-                    if (evaluationStack.Count < info.args)
+                    if (!first)
                     {
-                        Parser.ParserError.ReportSync(parser, string.Format("Not enough arguments for operator \"{0}\" in expression.", next.content), next.line + 1);
-                        return null;
+                        if (p.EnsureToken(Token.TokenType.Comma) == null) return null;
                     }
-                    List<Expression> parameters = new List<Expression>();
-                    for (int i = 0; i < info.args; i++)
-                        parameters.Add(evaluationStack.Pop());
-                    parameters.Reverse();
-                    FunctionCall call = new FunctionCall()
-                    {
-                        function = BuiltinFunctions.Get(next.content),
-                        parameters = parameters
-                    };
-                    Expression expr = new Expression(parent, call, parser);
-                    evaluationStack.Push(expr);
-                } else if (next.type == Token.TokenType.Identifier)
-                {
-                    List<Expression> parameters = new List<Expression>();
-                    for (int i = 0; i < next.paramCount; i++)
-                        parameters.Add(evaluationStack.Pop());
-                    parameters.Reverse();
-                    FunctionCall call = new FunctionCall()
-                    {
-                        function = new Function(next.content, -1),
-                        parameters = parameters
-                    };
-                    Expression expr = new Expression(parent, call, parser);
-                    evaluationStack.Push(expr);
-                } else
-                {
-                    Value v = new Value(parent, parser, next);
-                    Expression expr = new Expression(parent, v, parser);
-                    evaluationStack.Push(expr);
+                    first = false;
+
+                    Expression val = Parse(e, p);
+                    if (val == null) return null;
+                    e.arrayValues.Add(val);
                 }
+                if (p.EnsureToken(Token.TokenType.CloseBrack) == null) return null;
+
+                return e;
             }
 
-            if (evaluationStack.Count != 1)
+            return Group(parent, p);
+        }
+
+        private static Expression Group(Node parent, Parser p)
+        {
+            if (p.IsNextTokenDontRemoveEOL(Token.TokenType.OpenParen))
             {
-                Parser.ParserError.ReportSync(parser, "Failed to reduce stack when parsing expression.", parser.tokenStream.Peek().line + 1);
+                if (p.EnsureToken(Token.TokenType.OpenParen) == null) return null;
+                Expression e = Parse(parent, p);
+                if (p.EnsureToken(Token.TokenType.CloseParen) == null) return null;
+                return e;
+            }
+
+            return Compare(parent, p);
+        }
+
+        private static Expression Compare(Node parent, Parser p)
+        {
+            Expression e = BinaryOperation(parent, p);
+
+            if (p.IsNextTokenDontRemoveEOL(Token.TokenType.CompareOperator))
+            {
+                Expression left = e;
+                if (left == null) return null;
+                Token op = p.EnsureToken(Token.TokenType.CompareOperator);
+                if (op == null) return null;
+                e = new Expression(parent);
+                Expression right = Parse(e, p);
+                if (right == null) return null;
+                e.func = new FunctionCall()
+                {
+                    function = BuiltinFunctions.Get(op.content),
+                    parameters = new List<Expression>() { left, right }
+                };
+            }
+
+            return e;
+        }
+        
+        private static Expression BinaryOperation(Node parent, Parser p)
+        {
+            Expression e = Literal(parent, p);
+
+            if (p.IsNextTokenDontRemoveEOL(Token.TokenType.BinaryOperator))
+            {
+                Expression left = e;
+                if (left == null) return null;
+                Token op = p.EnsureToken(Token.TokenType.BinaryOperator);
+                if (op == null) return null;
+                e = new Expression(parent);
+                Expression right = Parse(e, p);
+                if (right == null) return null;
+                e.func = new FunctionCall()
+                {
+                    function = BuiltinFunctions.Get(op.content),
+                    parameters = new List<Expression>() { left, right }
+                };
+            }
+
+            return e;
+        }
+
+        private static Token.TokenType[] literals =
+        {
+            Token.TokenType.True,
+            Token.TokenType.False,
+            Token.TokenType.Undefined,
+            Token.TokenType.Number,
+            Token.TokenType.VariableIdentifier,
+            Token.TokenType.String
+        };
+
+        private static Expression Literal(Node parent, Parser p)
+        {
+            if (p.IsNextTokenDontRemoveEOL(literals))
+            {
+                Token t = p.EnsureToken(literals);
+                if (t == null) return null;
+                if (t.type == Token.TokenType.VariableIdentifier)
+                {
+                    if (p.IsNextToken(Token.TokenType.OpenBrack))
+                    {
+                        if (p.EnsureToken(Token.TokenType.OpenBrack) == null) return null;
+                        Expression e = new Expression(parent, new Value(parent, p, t), p);
+                        e.arrayIndex = Parse(e, p);
+                        if (e.arrayIndex == null) return null;
+                        if (p.EnsureToken(Token.TokenType.CloseBrack) == null) return null;
+                        return e;
+                    }
+                }
+                return new Expression(parent, new Value(parent, p, t), p);
+            }
+
+            Parser.ParserError.ReportSync(p, "Expected expression", p.tokenStream.Peek().line);
+            return null;
+        }
+
+        /*public static Value Evaluate(Expression e)
+        {
+            Expression optimized = Optimize(e);
+            if (optimized.value == null && optimized.arrayValues == null)
+            {
+                Parser.ParserError.Report("Expected constant expression", -1);
                 return null;
             }
-
-            return evaluationStack.Pop();
+            if (optimized.arrayValues != null)
+            {
+                CheckArray(optimized.arrayValues);
+                return new Value(optimized.arrayValues);
+            }
+            return optimized.value;
         }
 
-        /// <summary>
-        /// Checks if precendence applies when parsing expressions.
-        /// </summary>
-        private static bool PrecedenceApplies(Token t1, Stack<Token> operatorStack)
+        private static void CheckArray(List<Expression> exprs)
         {
-            if (operatorStack.Count == 0)
+            foreach (Expression v in exprs)
             {
-                return false;
+                if (v.value == null && v.arrayValues == null)
+                {
+                    Parser.ParserError.Report("Expected constant expression", -1);
+                    return;
+                }
+                if (v.arrayValues != null)
+                    CheckArray(v.arrayValues);
             }
-            if (t1.type != Token.TokenType.BinaryOperator && t1.type != Token.TokenType.CompareOperator && t1.type != Token.TokenType.UnaryMinus && t1.type != Token.TokenType.UnaryInvert)
-            {
-                Parser.ParserError.Report("Invalid operator in expression.", t1.line + 1);
-            }
-            Token t2 = operatorStack.Peek();
-
-            if (t2.type != Token.TokenType.BinaryOperator && t2.type != Token.TokenType.CompareOperator && t2.type != Token.TokenType.UnaryMinus && t2.type != Token.TokenType.UnaryInvert)
-                return false;
-
-            var t1Info = Operator.GetTokenOperator(t1);
-            var t2Info = Operator.GetTokenOperator(t2);
-
-            if (t1Info.assoc == Operator.Associativity.Left && t1Info.precedence <= t2Info.precedence)
-            {
-                return true;
-            }
-            if (t1Info.assoc == Operator.Associativity.Right && t1Info.precedence < t2Info.precedence)
-            {
-                return true;
-            }
-            return false;
         }
-    }
 
-    class Operator : Node
-    {
-        public Token op;
-
-        public enum Associativity
+        public static Expression Optimize(Expression e, bool constantsOnly = false)
         {
-            Left,
-            Right
-        }
-
-        public class OperatorInfo
-        {
-            public Associativity assoc;
-            public int precedence;
-            public int args;
-
-            public OperatorInfo(Associativity assoc, int precedence, int args)
+            if (e.value != null)
+                return e;
+            if (e.arrayValues != null)
             {
-                this.assoc = assoc;
-                this.precedence = precedence;
-                this.args = args;
+                List<Expression> optimized = new List<Expression>();
+                foreach (Expression toOptimize in e.arrayValues)
+                {
+                    optimized.Add(Optimize(toOptimize));
+                }
+                return new Expression(null, optimized, null);
             }
-        }
 
-        /// <summary>
-        /// Gets operator information from a token.
-        /// </summary>
-        public static OperatorInfo GetTokenOperator(Token t)
-        {
-            if (t.type == Token.TokenType.UnaryMinus || t.type == Token.TokenType.UnaryInvert)
-                return new OperatorInfo(Associativity.Right, 9, 1);
-            switch (t.content)
+            Expression optimizedLeft = Optimize(e.func.parameters[0]);
+            if (e.func.function.parameterCount == 2)
             {
-                case "*":
-                case "/":
-                case "%":
-                    return new OperatorInfo(Associativity.Left, 8, 2);
-                case "+":
-                case "-":
-                    return new OperatorInfo(Associativity.Left, 7, 2);
-                case ">":
-                case "<":
-                case ">=":
-                case "<=":
-                    return new OperatorInfo(Associativity.Left, 6, 2);
-                case "==":
-                case "!=":
-                    return new OperatorInfo(Associativity.Left, 5, 2);
-                case "&&":
-                    return new OperatorInfo(Associativity.Left, 4, 2);
-                case "||":
-                    return new OperatorInfo(Associativity.Left, 3, 2);
-                case "^^":
-                    return new OperatorInfo(Associativity.Left, 2, 2);
-                default:
-                    Parser.ParserError.Report("Invalid operator detected", t.line + 1);
-                    return null;
+                Expression optimizedRight = Optimize(e.func.parameters[1]);
+            } else
+            {
+                if (optimizedLeft.value == null)
+                {
+                    return optimizedLeft;
+                }
+                if (optimizedLeft.value.type == Value.Type.Variable)
+                {
+                    return optimizedLeft;
+                }
+                switch (e.func.function.name)
+                {
+                    case "-":
+                        break;
+                    case "!":
+                        break;
+                }
             }
-        }
-
-        public Operator(Node parent, Parser parser, Token token) : base (parent, parser)
-        {
-            op = token;
-        }
+        }*/
     }
 
     class Value : Node
@@ -1130,7 +1116,8 @@ namespace OpenDayDialogue
             Boolean = 3,
             Undefined = 4,
             Variable = 5,
-            RawIdentifier = 6 // Special case
+            RawIdentifier = 6, // Special case
+            //Array = 7
         }
         public Type type;
         public double valueDouble;
@@ -1139,6 +1126,7 @@ namespace OpenDayDialogue
         public bool valueBoolean;
         public string valueVariable;
         public string valueRawIdentifier;
+        //public List<Value> valueArray;
 
         public uint stringID; // For use by compiler
 
@@ -1240,7 +1228,9 @@ namespace OpenDayDialogue
 
         public Value(Node parent, Parser parser) : base(parent, parser)
         {
-            FromToken(parser.EnsureToken(Token.TokenType.Number, Token.TokenType.String, Token.TokenType.VariableIdentifier, Token.TokenType.True, Token.TokenType.False, Token.TokenType.Undefined));
+            Token t = parser.EnsureToken(Token.TokenType.Number, Token.TokenType.String, Token.TokenType.VariableIdentifier, Token.TokenType.True, Token.TokenType.False, Token.TokenType.Undefined);
+            if (t == null) return;
+            FromToken(t);
         }
 
         public Value(Node parent, Parser parser, Token t) : base(parent, parser)
@@ -1252,6 +1242,12 @@ namespace OpenDayDialogue
         {
             type = Type.RawIdentifier;
             valueRawIdentifier = rawIdentifier;
+        }
+
+        public Value(string str) : base(null, null)
+        {
+            type = Type.String;
+            valueString = str;
         }
 
         public Value(Node parent, Parser parser, int int32) : base(parent, parser)

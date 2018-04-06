@@ -16,7 +16,7 @@ namespace OpenDayDialogue
         /// <summary>
         /// The version of the binary file that gets exported.
         /// </summary>
-        public const uint Version = 3;
+        public const uint Version = 4;
 
         public static string programLanguage = "unknown";
 
@@ -81,7 +81,7 @@ namespace OpenDayDialogue
                 { "e|export=", "The export binary {file} name/path. Used in conjunction with '--source' option.", x => exportFileName = x },
                 { "d|debug", "Will emit debug instructions when compiling, useful for debugging with an interpreter.", x => emitDebugInstructions = (x != null) },
                 { "make-translations", "Generate translation files as compiling happens. Outputs to the same directory as source files, with extension '.opdat'.", x => generateTranslations = (x != null) },
-                { "exclude-values", "Exclude values/commands when generating translations (has no effect when applying the translation files).", x => excludeValues = (x != null) },
+                { "exclude-values", "Exclude values/commands AND expressions when generating translations (has no effect when applying the translation files).", x => excludeValues = (x != null) },
                 { "apply-translations", "Will apply translation files if they are found with the source code files. They must be the source file's name followed by '.opdat'.", x => applyTranslations = (x != null) },
                 { "ignore-hash", "When applying translation files, ignore the original file hash. Warning: This can be risky.", x => translationIgnoreHash = (x != null) },
                 { "show-instructions", "Show the final list of instructions when the program finishes compiling.", x => showInstructions = (x != null) },

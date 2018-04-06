@@ -103,6 +103,13 @@ namespace OpenDayDialogue
                 case Value.Type.Boolean:
                     bw.Write(v.valueBoolean);
                     break;
+                /*case Value.Type.Array:
+                    bw.Write(v.valueArray.Count);
+                    foreach (Value val in v.valueArray)
+                    {
+                        WriteValue(bw, val);
+                    }
+                    break;*/
                 // Undefined has nothing with it
             }
         }
