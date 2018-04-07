@@ -832,29 +832,6 @@ namespace OpenDayDialogue
         public List<Expression> parameters;
     }
 
-    // Expression -> ( Expression )
-
-    // Expression -> And
-    // Expression -> Or
-    // And -> Expression && Expression
-    // Or -> Expression || Expression
-
-    // Expression -> CompareOperation
-    // CompareOperation -> Expression CompareOperator Expression
-
-    // Expression -> BinaryOperation
-    // BinaryOperation -> Expression BinOp Expression
-
-    // Expression -> UnaryOperation
-    // UnaryOperation -> UnaryOp Expression
-
-    // Expression -> VariableIdentifier [ Expression ]
-    
-    // Expression -> [ Expression , ... ]
-    
-    // Expression -> AllLiterals
-
-
     class Expression : Node
     {
         public Value value;
@@ -1031,6 +1008,33 @@ namespace OpenDayDialogue
                     }
                 }
                 return new Expression(parent, new Value(parent, p, t), p);
+            } else if (p.IsNextTokenDontRemoveEOL(Token.TokenType.Identifier))
+            {
+                Token t = p.EnsureToken(Token.TokenType.Identifier);
+                if (t == null) return null;
+                if (p.EnsureToken(Token.TokenType.OpenParen) == null) return null;
+                Expression e = new Expression(parent);
+                e.func = new FunctionCall()
+                {
+                    function = new Function(t.content, -1),
+                    parameters = new List<Expression>()
+                };
+                bool first = true;
+                while (!p.IsNextTokenDontRemoveEOL(Token.TokenType.CloseParen))
+                {
+                    if (!first)
+                    {
+                        if (p.EnsureToken(Token.TokenType.Comma) == null) return null;
+                    }
+                    first = false;
+
+                    Expression val = Parse(e, p);
+                    if (val == null) return null;
+                    e.func.parameters.Add(val);
+                }
+                if (p.EnsureToken(Token.TokenType.CloseParen) == null) return null;
+
+                return e;
             }
 
             Parser.ParserError.ReportSync(p, "Expected expression", p.tokenStream.Peek().line);
