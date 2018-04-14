@@ -132,7 +132,7 @@ namespace OpenDayDialogue
     {
         public string variableName;
         public Expression value;
-        public Expression arrayIndex;
+        public List<Expression> arrayIndices;
 
         public static bool CanParse(Parser parser)
         {
@@ -148,10 +148,14 @@ namespace OpenDayDialogue
 
             if (parser.IsNextToken(Token.TokenType.OpenBrack))
             {
-                if (parser.EnsureToken(Token.TokenType.OpenBrack) == null) return;
-                arrayIndex = Expression.Parse(this, parser);
-                if (arrayIndex == null) return;
-                if (parser.EnsureToken(Token.TokenType.CloseBrack) == null) return;
+                arrayIndices = new List<Expression>();
+                while (parser.IsNextToken(Token.TokenType.OpenBrack))
+                {
+                    if (parser.EnsureToken(Token.TokenType.OpenBrack) == null) return;
+                    arrayIndices.Add(Expression.Parse(this, parser));
+                    if (arrayIndices.Last() == null) return;
+                    if (parser.EnsureToken(Token.TokenType.CloseBrack) == null) return;
+                }
             }
 
             if (parser.IsNextToken(Token.TokenType.Equals))
@@ -214,12 +218,12 @@ namespace OpenDayDialogue
                         break;
                 }
 
-                if (arrayIndex == null)
+                if (arrayIndices == null)
                 {
                     value = new Expression(this, new FunctionCall()
                     {
-                            function = BuiltinFunctions.Get(builtinFunc),
-                            parameters = new List<Expression>()
+                        function = BuiltinFunctions.Get(builtinFunc),
+                        parameters = new List<Expression>()
                         {
                             new Expression(this, new Value(this, parser, new Token()
                             {
@@ -236,7 +240,7 @@ namespace OpenDayDialogue
                         type = Token.TokenType.VariableIdentifier,
                         content = variableName
                     }), parser);
-                    e.arrayIndex = arrayIndex;
+                    e.arrayIndices = arrayIndices;
                     value = new Expression(this, new FunctionCall()
                     {
                         function = BuiltinFunctions.Get(builtinFunc),
@@ -835,7 +839,7 @@ namespace OpenDayDialogue
     class Expression : Node
     {
         public Value value;
-        public Expression arrayIndex;
+        public List<Expression> arrayIndices; // list of array access indices, like $arr[0][1] (0 and 1 would be 2 expressions)
         public FunctionCall func;
         public List<Expression> arrayValues;
 
@@ -999,11 +1003,15 @@ namespace OpenDayDialogue
                 {
                     if (p.IsNextToken(Token.TokenType.OpenBrack))
                     {
-                        if (p.EnsureToken(Token.TokenType.OpenBrack) == null) return null;
                         Expression e = new Expression(parent, new Value(parent, p, t), p);
-                        e.arrayIndex = Parse(e, p);
-                        if (e.arrayIndex == null) return null;
-                        if (p.EnsureToken(Token.TokenType.CloseBrack) == null) return null;
+                        e.arrayIndices = new List<Expression>();
+                        while (p.IsNextToken(Token.TokenType.OpenBrack))
+                        {
+                            if (p.EnsureToken(Token.TokenType.OpenBrack) == null) return null;
+                            e.arrayIndices.Add(Parse(e, p));
+                            if (e.arrayIndices.Last() == null) return null;
+                            if (p.EnsureToken(Token.TokenType.CloseBrack) == null) return null;
+                        }
                         return e;
                     }
                 }

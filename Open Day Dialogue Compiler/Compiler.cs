@@ -159,6 +159,7 @@ namespace OpenDayDialogue
             Push = 0xA0, // operand1: value id
             Pop = 0xA1,
             Convert = 0xA2, // operand1: short number of new type, of Value.Type
+            Duplicate = 0xA3, // Pushes a copy of the top value of the stack to the stack (duplicates).
 
             // Builtin operators
             BOAdd = 0xC0,
@@ -186,7 +187,7 @@ namespace OpenDayDialogue
             SetVariable = 0xB4, // operand1: variable name id. Uses top value on stack
             CallFunction = 0xB5, // operand1: function name id. Used for non-builitin functions
             MakeArray = 0xBC, // operand1: count of initial indices. Initializes array to a Value and pushes
-            SetArrayIndex = 0xBD, // First the array is pushed, then the index is pushed, then the value (3 items prepared on stack for this function). Index will be popped off as well.
+            SetArrayIndex = 0xBD, // First the array is pushed, then the value, then the index (3 items prepared on stack for this function). Index will be popped off.
             PushArrayIndex = 0xBE, // Pushes the value of an index in array, using the values on the stack for array and index. On the top of stack should be index. The instruction pops off the original Value/array as well.
             PushVariable = 0xBF, // operand1: variable name id. Pushes a variable's Value to the stack.
 
@@ -522,19 +523,40 @@ namespace OpenDayDialogue
                         DebugEmitLine((int)statement.variableAssign.sceneLine);
 
                     // For setting array values, prepare the array
-                    if (statement.variableAssign.arrayIndex != null)
+                    if (statement.variableAssign.arrayIndices != null)
                     {
                         Emit(Instruction.Opcode.PushVariable, program.RegisterString(statement.variableAssign.variableName));
-                        GenerateCode(statement.variableAssign.arrayIndex);
-                    }
+                        for (int i = 0; i < statement.variableAssign.arrayIndices.Count; i++)
+                        {
+                            bool hasToWorkDown = (i + 1 < statement.variableAssign.arrayIndices.Count);
+                            if (hasToWorkDown)
+                            {
+                                Emit(Instruction.Opcode.Duplicate);
+                            } else
+                            {
+                                // Compile expression
+                                GenerateCode(statement.variableAssign.value);
+                            }
+                            GenerateCode(statement.variableAssign.arrayIndices[i]);
+                            if (hasToWorkDown)
+                            {
+                                Emit(Instruction.Opcode.PushArrayIndex);
+                            } else
+                            {
+                                Emit(Instruction.Opcode.SetArrayIndex);
+                            }
+                        }
 
-                    // Compile the expression
-                    GenerateCode(statement.variableAssign.value);
-
-                    // For setting array values, update the array
-                    if (statement.variableAssign.arrayIndex != null)
+                        // Work back up, using duplicated arrays
+                        for (int i = statement.variableAssign.arrayIndices.Count - 2; i >= 0; i--)
+                        {
+                            GenerateCode(statement.variableAssign.arrayIndices[i]);
+                            Emit(Instruction.Opcode.SetArrayIndex);
+                        }
+                    } else
                     {
-                        Emit(Instruction.Opcode.SetArrayIndex);
+                        // Compile expression
+                        GenerateCode(statement.variableAssign.value);
                     }
 
                     // Set the variable
@@ -775,10 +797,13 @@ namespace OpenDayDialogue
                 {
                     // Variable value
                     Emit(Instruction.Opcode.PushVariable, program.RegisterString(e.value.valueVariable));
-                    if (e.arrayIndex != null)
+                    if (e.arrayIndices != null)
                     {
-                        GenerateCode(e.arrayIndex);
-                        Emit(Instruction.Opcode.PushArrayIndex);
+                        foreach (Expression i in e.arrayIndices)
+                        {
+                            GenerateCode(i);
+                            Emit(Instruction.Opcode.PushArrayIndex);
+                        }
                     }
                 } else
                 {
@@ -791,8 +816,8 @@ namespace OpenDayDialogue
                 int i = 0;
                 foreach (Expression expr in e.arrayValues)
                 {
-                    Emit(Instruction.Opcode.Push, program.RegisterValue(new Value(null, null, i), this));
                     GenerateCode(expr);
+                    Emit(Instruction.Opcode.Push, program.RegisterValue(new Value(null, null, i), this));
                     Emit(Instruction.Opcode.SetArrayIndex);
                     i++;
                 }
