@@ -868,9 +868,32 @@ namespace OpenDayDialogue
         /// </summary>
         public static Expression Parse(Node parent, Parser parser)
         {
-            return UnaryOperation(parent, parser);
+            return Conjunction(parent, parser);
         }
-        
+
+        private static Expression Conjunction(Node parent, Parser p)
+        {
+            Expression e = UnaryOperation(parent, p);
+
+            if (p.IsNextTokenDontRemoveEOL(Token.TokenType.ConjunctionOperator))
+            {
+                Expression left = e;
+                if (left == null) return null;
+                Token op = p.EnsureToken(Token.TokenType.ConjunctionOperator);
+                if (op == null) return null;
+                e = new Expression(parent);
+                Expression right = Parse(e, p);
+                if (right == null) return null;
+                e.func = new FunctionCall()
+                {
+                    function = BuiltinFunctions.Get(op.content),
+                    parameters = new List<Expression>() { left, right }
+                };
+            }
+
+            return e;
+        }
+
         private static Expression UnaryOperation(Node parent, Parser p)
         {
             if ((p.IsNextTokenDontRemoveEOL(Token.TokenType.BinaryOperator) && p.IsNextToken("-")) || 
@@ -948,7 +971,7 @@ namespace OpenDayDialogue
                 Token op = p.EnsureToken(Token.TokenType.CompareOperator);
                 if (op == null) return null;
                 e = new Expression(parent);
-                Expression right = Parse(e, p);
+                Expression right = UnaryOperation(e, p); // don't start at the top, this causes problems otherwise
                 if (right == null) return null;
                 e.func = new FunctionCall()
                 {
@@ -971,7 +994,7 @@ namespace OpenDayDialogue
                 Token op = p.EnsureToken(Token.TokenType.BinaryOperator);
                 if (op == null) return null;
                 e = new Expression(parent);
-                Expression right = Parse(e, p);
+                Expression right = UnaryOperation(e, p); // don't start at the top, this causes problems otherwise
                 if (right == null) return null;
                 e.func = new FunctionCall()
                 {
@@ -1048,74 +1071,6 @@ namespace OpenDayDialogue
             Parser.ParserError.ReportSync(p, "Expected expression", p.tokenStream.Peek().line);
             return null;
         }
-
-        /*public static Value Evaluate(Expression e)
-        {
-            Expression optimized = Optimize(e);
-            if (optimized.value == null && optimized.arrayValues == null)
-            {
-                Parser.ParserError.Report("Expected constant expression", -1);
-                return null;
-            }
-            if (optimized.arrayValues != null)
-            {
-                CheckArray(optimized.arrayValues);
-                return new Value(optimized.arrayValues);
-            }
-            return optimized.value;
-        }
-
-        private static void CheckArray(List<Expression> exprs)
-        {
-            foreach (Expression v in exprs)
-            {
-                if (v.value == null && v.arrayValues == null)
-                {
-                    Parser.ParserError.Report("Expected constant expression", -1);
-                    return;
-                }
-                if (v.arrayValues != null)
-                    CheckArray(v.arrayValues);
-            }
-        }
-
-        public static Expression Optimize(Expression e, bool constantsOnly = false)
-        {
-            if (e.value != null)
-                return e;
-            if (e.arrayValues != null)
-            {
-                List<Expression> optimized = new List<Expression>();
-                foreach (Expression toOptimize in e.arrayValues)
-                {
-                    optimized.Add(Optimize(toOptimize));
-                }
-                return new Expression(null, optimized, null);
-            }
-
-            Expression optimizedLeft = Optimize(e.func.parameters[0]);
-            if (e.func.function.parameterCount == 2)
-            {
-                Expression optimizedRight = Optimize(e.func.parameters[1]);
-            } else
-            {
-                if (optimizedLeft.value == null)
-                {
-                    return optimizedLeft;
-                }
-                if (optimizedLeft.value.type == Value.Type.Variable)
-                {
-                    return optimizedLeft;
-                }
-                switch (e.func.function.name)
-                {
-                    case "-":
-                        break;
-                    case "!":
-                        break;
-                }
-            }
-        }*/
     }
 
     class Value : Node

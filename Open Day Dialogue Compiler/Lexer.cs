@@ -19,6 +19,7 @@ namespace OpenDayDialogue
             Equals,
             CompareOperator,
             BinaryOperator,
+            ConjunctionOperator,
             OpenParen,
             CloseParen,
             EndOfLine,
@@ -361,15 +362,27 @@ namespace OpenDayDialogue
                         });
                     }
 
+                    // Conjunction operator
+                    string cjop = "";
+                    if (txt.CheckChars2ReturnVal(ref pos, '&', '&', ref cjop)
+                     || txt.CheckChars2ReturnVal(ref pos, '|', '|', ref cjop)
+                     || txt.CheckChars2ReturnVal(ref pos, '^', '^', ref cjop))
+                    {
+                        pos += cjop.Length;
+                        tokens.Add(new Token()
+                        {
+                            type = Token.TokenType.ConjunctionOperator,
+                            line = line,
+                            content = cjop
+                        });
+                    }
+
                     // Compare operator
                     string op = "";
                     if (txt.CheckChars2ReturnVal(ref pos, '=', '=', ref op)
                      || txt.CheckChars2ReturnVal(ref pos, '!', '=', ref op)
                      || txt.CheckChars2ReturnVal(ref pos, '>', '=', ref op)
                      || txt.CheckChars2ReturnVal(ref pos, '<', '=', ref op)
-                     || txt.CheckChars2ReturnVal(ref pos, '&', '&', ref op)
-                     || txt.CheckChars2ReturnVal(ref pos, '|', '|', ref op)
-                     || txt.CheckChars2ReturnVal(ref pos, '^', '^', ref op)
                      || txt.CheckChars1ReturnVal(ref pos, '>', ref op)
                      || txt.CheckChars1ReturnVal(ref pos, '<', ref op)
                      || txt.CheckChars1ReturnVal(ref pos, '!', ref op))
