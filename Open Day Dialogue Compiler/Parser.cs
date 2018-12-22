@@ -1028,7 +1028,7 @@ namespace OpenDayDialogue
                     {
                         Expression e = new Expression(parent, new Value(parent, p, t), p);
                         e.arrayIndices = new List<Expression>();
-                        while (p.IsNextToken(Token.TokenType.OpenBrack))
+                        while (p.IsNextTokenDontRemoveEOL(Token.TokenType.OpenBrack))
                         {
                             if (p.EnsureToken(Token.TokenType.OpenBrack) == null) return null;
                             e.arrayIndices.Add(Parse(e, p));

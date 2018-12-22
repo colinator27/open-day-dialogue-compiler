@@ -140,6 +140,7 @@ namespace OpenDayDialogue
                 queuedTranslations = new Dictionary<string, Tuple<string, Dictionary<string, Queue<string>>>>();
             }
 
+            sourceFileName = new FileInfo(sourceFileName).FullName;
             files.Enqueue(sourceFileName);
             allFiles.Add(sourceFileName);
 

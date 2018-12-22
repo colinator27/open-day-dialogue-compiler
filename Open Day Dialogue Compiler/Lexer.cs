@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Runtime.Serialization;
 
 namespace OpenDayDialogue
@@ -258,6 +259,8 @@ namespace OpenDayDialogue
                             pos++;
                             if (Application.allFiles.Contains(str))
                                 LexerError.Report("An included file was included more than once.", line);
+                            if (!Path.IsPathRooted(str))
+                                str = Path.GetFullPath(Path.Combine(new FileInfo(Application.currentFile).Directory.FullName, str));
                             Application.files.Enqueue(str);
                             Application.allFiles.Add(str);
                         }
