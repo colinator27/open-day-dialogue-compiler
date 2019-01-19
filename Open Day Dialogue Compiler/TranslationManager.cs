@@ -36,6 +36,9 @@ namespace OpenDayDialogue
                             case '"':
                                 text += "\\\"";
                                 break;
+                            case '\\':
+                                text += "\\\\";
+                                break;
                             default:
                                 text += ch;
                                 break;
