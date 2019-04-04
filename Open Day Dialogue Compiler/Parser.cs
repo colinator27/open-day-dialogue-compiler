@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.Text;
@@ -1108,11 +1109,11 @@ namespace OpenDayDialogue
                     if (t.content.Contains("."))
                     {
                         type = Type.Double;
-                        valueDouble = double.Parse(t.content);
+                        valueDouble = double.Parse(t.content, CultureInfo.InvariantCulture);
                     } else
                     {
                         type = Type.Int32;
-                        valueInt32 = int.Parse(t.content);
+                        valueInt32 = int.Parse(t.content, CultureInfo.InvariantCulture);
                     }
                     break;
                 case Token.TokenType.String:
@@ -1300,13 +1301,13 @@ namespace OpenDayDialogue
                             return new Value(this.parent, null)
                             {
                                 type = type,
-                                valueDouble = double.Parse(this.valueString)
+                                valueDouble = double.Parse(this.valueString, CultureInfo.InvariantCulture)
                             };
                         case Type.Int32:
                             return new Value(this.parent, null)
                             {
                                 type = type,
-                                valueInt32 = int.Parse(this.valueString)
+                                valueInt32 = int.Parse(this.valueString, CultureInfo.InvariantCulture)
                             };
                         case Type.Boolean:
                             return new Value(this.parent, null)
